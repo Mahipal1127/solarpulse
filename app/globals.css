@@ -1,26 +1,278 @@
 @import "tailwindcss";
 
+/* ===========================================================================
+   Solar Pulse design system — the single source of truth for color.
+   ===========================================================================
+
+   Tailwind v4 is CSS-first: there is no tailwind.config.ts in this project and
+   adding one would not be read. Tokens are declared here in `@theme`, which both
+   generates the utilities (`bg-brand-gold`, `text-status-danger`) AND emits every
+   value as a custom property on :root. That second half matters — recharts takes
+   raw values in its fill/stroke props, so charts read `var(--brand-gold)` from
+   this same declaration rather than a parallel list of hexes that would drift out
+   of step with the utilities.
+
+   Never write a hex value in a component. If something needs a color this file
+   does not cover, name it here first.
+
+   THE SURFACE RULE
+   The app is light: `surface-bg` for the page, `surface-card` white for the
+   sidebar, top bar, cards, tables and modals. Chrome is NOT dark — an earlier
+   revision made the sidebar and header navy and that was a regression, corrected
+   here. Depth comes from a hairline `border-subtle`, not from drop shadows.
+
+   WHERE GOLD IS ALLOWED
+   Gold is the identity color and it marks state and action, not surface: the
+   active nav item (as a 10% tint), a selected filter pill (solid), primary
+   buttons, focus rings, progress fills and the logo. It is never a page or panel
+   background.
+
+   WHY STATUS COLORS AVOID THE WARM RANGE
+   An ERP is scanned, not read. `status-warning` is a deliberately dark amber
+   (#B45309) rather than anything near brand-gold, so a "pending" badge never
+   visually merges with a gold "Create Task" button or a gold active-state marker
+   beside it. That separation is the whole reason the status palette exists apart
+   from the brand palette; keep it.
+   =========================================================================== */
+
+@theme {
+  /* Brand */
+  --color-brand-gold: #f5a623;
+  --color-brand-orange: #f7941d;
+  --color-brand-slate: #1a2332;
+
+  /*
+     RESERVED. Defined so it exists as a token, but it must not be applied as a
+     background anywhere in the current build — this is the color that caused the
+     dark-sidebar regression. Kept for a possible future print/export header or
+     footer. If you are about to write `bg-brand-navy`, you want `surface-card`.
+  */
+  --color-brand-navy: #0f1b2d;
+
+  /* Surfaces and lines */
+  --color-surface-bg: #f7f7f5;
+  --color-surface-card: #ffffff;
+  --color-border-subtle: #e5e7eb;
+  --color-text-muted: #6b7280;
+
+  /* Functional status palette. Not in the brand doc — chosen to harmonize with it
+     while staying unmistakably distinct from gold at a glance. */
+  --color-status-success: #2e7d32;
+  --color-status-warning: #b45309;
+  --color-status-danger: #c0392b;
+  --color-status-info: #2563a8;
+
+  /* Progress fills and the logo lockup. The only place both brand warms meet. */
+  --background-image-brand-gradient: linear-gradient(135deg, #f5a623 0%, #f7941d 100%);
+
+  /*
+     Inter, for legibility at small sizes across dense tables — not personality.
+     Overrides Tailwind's default --font-sans so `font-sans` and the inherited body
+     font resolve to the same stack.
+  */
+  --font-sans: var(--font-inter), system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+   Spec-named aliases, so `var(--brand-gold)` works alongside the Tailwind-namespaced
+   `var(--color-brand-gold)`. Aliases, not copies — each hex appears exactly once
+   above, so these cannot fall out of sync.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --brand-gold: var(--color-brand-gold);
+  --brand-orange: var(--color-brand-orange);
+  --brand-navy: var(--color-brand-navy);
+  --brand-slate: var(--color-brand-slate);
+  --neutral-bg: var(--color-surface-bg);
+  --neutral-white: var(--color-surface-card);
+  --border-subtle: var(--color-border-subtle);
+  --neutral-text-muted: var(--color-text-muted);
+  --status-success: var(--color-status-success);
+  --status-warning: var(--color-status-warning);
+  --status-danger: var(--color-status-danger);
+  --status-info: var(--color-status-info);
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /*
+     Chart furniture — grid lines, axis labels, tooltip surface. Named here because
+     recharts takes raw values, not Tailwind classes, and without a token every
+     chart invents its own grey. The tooltip is brand-slate, not brand-navy, so
+     that navy stays genuinely unused as a background anywhere in the build.
+  */
+  --chart-grid: var(--color-border-subtle);
+  --chart-axis: var(--color-text-muted);
+  --chart-tooltip-bg: var(--color-brand-slate);
+  --chart-tooltip-text: var(--color-surface-card);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /*
+     Bar fills for the muted-series-plus-one-highlight pattern: most bars recede to
+     a neutral or a soft gold, and the bar that matters — usually the current period
+     — is solid gold. Spending one colour on the single relevant data point reads
+     faster than colouring twelve bars and leaving the eye to hunt.
+  */
+  --chart-bar-muted: var(--color-border-subtle);
+  /*
+     A literal rather than color-mix(): recharts sets these as SVG presentation
+     attributes (fill="var(--chart-bar-soft)"), and a var that is invalid at
+     computed-value time takes `fill` down to its initial value — black. A static
+     hex cannot fail that way. This is #f5a623 at 28% over white; the palette is
+     locked, so there is nothing here to keep in sync.
+  */
+  --chart-bar-soft: #fce6c1;
+  --chart-bar-highlight: var(--color-brand-gold);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-surface-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+   Status badges — tinted, never solid.
+   ---------------------------------------------------------------------------
+   Defined as utilities rather than repeated class triplets so the treatment lives
+   in one place and every module's badge is identical by construction.
+
+   These assume a white (`surface-card`) backdrop, which is where badges live.
+   --------------------------------------------------------------------------- */
+
+@utility badge-success {
+  background-color: color-mix(in srgb, var(--color-status-success) 10%, #fff);
+  color: var(--color-status-success);
+  --tw-ring-color: color-mix(in srgb, var(--color-status-success) 22%, #fff);
+}
+
+@utility badge-warning {
+  background-color: color-mix(in srgb, var(--color-status-warning) 10%, #fff);
+  color: var(--color-status-warning);
+  --tw-ring-color: color-mix(in srgb, var(--color-status-warning) 22%, #fff);
+}
+
+@utility badge-danger {
+  background-color: color-mix(in srgb, var(--color-status-danger) 10%, #fff);
+  color: var(--color-status-danger);
+  --tw-ring-color: color-mix(in srgb, var(--color-status-danger) 22%, #fff);
+}
+
+@utility badge-info {
+  background-color: color-mix(in srgb, var(--color-status-info) 10%, #fff);
+  color: var(--color-status-info);
+  --tw-ring-color: color-mix(in srgb, var(--color-status-info) 22%, #fff);
+}
+
+/* The "not started / settled without an outcome" badge: draft, new, archived,
+   closed, expired, cancelled. Neutral by design. */
+@utility badge-neutral {
+  background-color: var(--color-surface-bg);
+  color: var(--color-text-muted);
+  --tw-ring-color: var(--color-border-subtle);
+}
+
+/* ---------------------------------------------------------------------------
+   Full-width notice banners — the read-only strip under a module header, and the
+   visitor strip that tells Finance or a ticket reporter why they are here.
+   ---------------------------------------------------------------------------
+   Opaque rather than translucent: these sit on `surface-bg`, not on a white card,
+   and a translucent tint would composite against that darker canvas and shift.
+   Mixing against #fff explicitly makes the result independent of what is behind.
+   --------------------------------------------------------------------------- */
+
+@utility notice-warning {
+  background-color: color-mix(in srgb, var(--color-status-warning) 10%, #fff);
+  color: var(--color-status-warning);
+  border-color: color-mix(in srgb, var(--color-status-warning) 25%, #fff);
+}
+
+@utility notice-info {
+  background-color: color-mix(in srgb, var(--color-status-info) 10%, #fff);
+  color: var(--color-status-info);
+  border-color: color-mix(in srgb, var(--color-status-info) 25%, #fff);
+}
+
+/* ---------------------------------------------------------------------------
+   Focus ring.
+   ---------------------------------------------------------------------------
+   Gold, 2px with a 2px offset, on every interactive element. Applied as a base
+   rule against :focus-visible rather than as a class on each control, so a button
+   added later cannot silently ship without one — the requirement holds by default
+   instead of by remembering.
+
+   :focus-visible, not :focus — a mouse click on a button should not leave a ring
+   behind, but a Tab to it must.
+   --------------------------------------------------------------------------- */
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-gold);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Login screen
+   ---------------------------------------------------------------------------
+   A warm off-white wash rather than the old blue one. Deliberately light: this
+   screen follows the same surface rule as the rest of the app, and a dark or navy
+   sign-in panel would contradict the chrome behind it the moment someone logs in.
+   --------------------------------------------------------------------------- */
+
+.login-bg-sky {
+  background:
+    radial-gradient(
+      circle at 50% 18%,
+      color-mix(in srgb, var(--color-brand-gold) 14%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      circle at 50% 118%,
+      color-mix(in srgb, var(--color-brand-orange) 10%, transparent) 0%,
+      transparent 60%
+    ),
+    var(--color-surface-bg);
+}
+
+.login-arc-1 {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color-surface-card) 70%, transparent) 0%,
+    transparent 70%
+  );
+}
+
+.login-card-glass {
+  background: color-mix(in srgb, var(--color-surface-card) 92%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    0 20px 40px -16px color-mix(in srgb, var(--color-brand-slate) 18%, transparent),
+    0 0 0 1px var(--color-border-subtle) inset;
+}
+
+/* Flat and calm — a hairline border rather than a shadow. */
+/*
+   Matches the <Card> primitive exactly (rounded-2xl = 1rem, same hairline, no
+   shadow) so a hand-rolled dashboard card and a <Card> sitting in the same grid
+   do not read as two different components.
+*/
+.dashboard-card {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 1rem;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-muted) 45%, transparent);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
 }
