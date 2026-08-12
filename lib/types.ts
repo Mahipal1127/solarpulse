@@ -2,7 +2,13 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TaskStatus = 'pending' | 'in_progress' | 'delayed' | 'completed' | 'archived'
 export type ApprovalType = 'budget' | 'purchase' | 'leave' | 'expense'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
-export type AIProvider = 'openai' | 'anthropic' | 'google'
+/**
+ * Names the wire dialect the request is built in, not the company. `compatible` is
+ * OpenAI's chat-completions format pointed at an operator-supplied host, which is
+ * what every gateway (OpenRouter, LiteLLM, Groq, a self-hosted vLLM) speaks.
+ * Must stay in step with the ai_provider enum — see migration 0010.
+ */
+export type AIProvider = 'openai' | 'anthropic' | 'google' | 'compatible'
 export type AICommandStatus = 'proposed' | 'confirmed' | 'rejected' | 'executed'
 
 export type TenderStatus =
@@ -128,10 +134,17 @@ export interface AISettingsPublic {
   provider: AIProvider
   model: string
   is_enabled: boolean
-  daily_token_limit: number | null
+  /** Credits per day, or null for unlimited. One credit is one provider token —
+   *  see lib/ai/credits.ts. */
+  daily_credit_limit: number | null
   has_api_key: boolean
   updated_by: string | null
   updated_at: string
+  /**
+   * Null means "use the vendor's default host". Not a secret — it is a hostname the
+   * CEO typed — so unlike the key it is returned to the browser in full.
+   */
+  base_url: string | null
 }
 
 export interface AICommandLog {

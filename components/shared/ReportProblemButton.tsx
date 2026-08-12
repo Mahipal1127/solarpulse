@@ -61,14 +61,13 @@ export function ReportProblemButton() {
   return (
     <>
       {/*
-        Icon only, matching the round icon buttons already in the CEO header. With
-        no visible label the accessible name has to come from aria-label — without
-        it a screen reader announces this as an unnamed button — and `title` gives
-        sighted users the same words on hover.
+        Icon only, matching the round icon buttons already in the module headers. With
+        no visible label the accessible name has to come from aria-label — without it a
+        screen reader announces this as an unnamed button — and `title` gives sighted
+        users the same words on hover.
 
         Neutral grey, not gold: this is passive header chrome that is present on every
-        screen, and gold is reserved for the active state and the primary action. Both
-        headers it appears in are `surface-card` white.
+        screen, and gold is reserved for the active state and the primary action.
       */}
       <button
         ref={triggerRef}
@@ -95,7 +94,15 @@ export function ReportProblemButton() {
   )
 }
 
-function ReportProblemDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Exported so a menu item can open it without borrowing the button above.
+ *
+ * The CEO reaches this from the profile dropdown rather than from an icon in a header,
+ * and a dropdown row is a `menuitem` — wrapping the icon button inside one would nest
+ * a button in a button and give the row two competing accessible names. The dialog is
+ * the reusable part; the trigger is not.
+ */
+export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter()
   const titleId = useId()
   const panelRef = useRef<HTMLDivElement>(null)

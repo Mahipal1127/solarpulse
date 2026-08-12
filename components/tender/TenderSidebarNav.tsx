@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, FileText, Gavel, ArrowLeft } from 'lucide-react'
+import { LayoutDashboard, ClipboardList, FileText, Gavel, ArrowLeft } from 'lucide-react'
 import {
   SIDEBAR_BODY,
   SIDEBAR_FOOTER_GROUP,
@@ -10,8 +10,16 @@ import {
   navItemClass,
 } from '@/components/shared/chrome'
 
+/*
+ * Overview first, and it takes the LayoutDashboard glyph that My Tasks used to
+ * carry. That icon on a personal task list was the clearest sign this module was
+ * missing a dashboard: the nav promised an overview and led to an inbox. My Tasks
+ * keeps its place but now reads as what it is, one person's work inside a
+ * department board.
+ */
 const NAV = [
-  { href: '/my-tasks', label: 'My Tasks', icon: LayoutDashboard },
+  { href: '/overview', label: 'Overview', icon: LayoutDashboard },
+  { href: '/my-tasks', label: 'My Tasks', icon: ClipboardList },
   { href: '/tenders', label: 'Tenders', icon: FileText },
   { href: '/bids', label: 'Bids', icon: Gavel },
 ]

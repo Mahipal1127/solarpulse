@@ -112,8 +112,6 @@ export async function POST(req: NextRequest) {
 
       const updates: Record<string, unknown> = {}
       if (payload.status) updates.status = payload.status as TaskStatus
-      if (payload.progress_percent !== null && payload.progress_percent !== undefined)
-        updates.progress_percent = payload.progress_percent
       if (payload.note) updates.note = payload.note
 
       const task = await updateTask(user, taskRow.id, updates as Parameters<typeof updateTask>[2], 'ai')

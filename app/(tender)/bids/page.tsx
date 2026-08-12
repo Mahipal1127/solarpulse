@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { requireDepartment } from '@/lib/auth/guards'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Card, Badge, EmptyState, StatCard } from '@/components/ui/primitives'
 import { BidFilters } from '@/components/tender/BidTracker/BidFilters'
 import { getTenderEmployees } from '@/lib/tender/queries'
+import { getBidSummary } from '@/lib/tender/dashboard'
 import { TENDER_DEPARTMENT_SLUG } from '@/lib/services/tenders'
 import {
   formatCurrency,
@@ -11,15 +11,24 @@ import {
   BID_STATUS_STYLES,
   BID_STATUS_LABELS,
 } from '@/lib/format'
-import type { TenderBid } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
-type BidListRow = TenderBid & {
-  tenders: { id: string; title: string; status: string } | null
-  assignee: { full_name: string } | null
-}
-
+/**
+ * Every bid across every tender.
+ *
+ * TWO BUGS THIS PAGE USED TO HAVE
+ * "Value in play" was `sum + (b.bid_amount ?? 0)` over a numeric(14,2) column, and
+ * supabase-js returns numeric as a *string* to avoid float precision loss. So the
+ * first iteration produced `0 + "50000"` — the string "050000" — and every later one
+ * concatenated onto it. Two ₹50,000 bids reported ₹5,00,00,50,000. Every other module
+ * wraps these columns in Number() for exactly this reason; this one did not.
+ *
+ * The four cards were also computed from the filtered query, so selecting "Won" made
+ * "In play" read 0. Both are now taken from getBidSummary(), which is the same
+ * aggregation the overview uses, and the filters are applied in JS over the rows it
+ * returned.
+ */
 export default async function BidsPage(props: PageProps<'/bids'>) {
   const user = await requireDepartment(TENDER_DEPARTMENT_SLUG)
   const searchParams = await props.searchParams
@@ -27,36 +36,21 @@ export default async function BidsPage(props: PageProps<'/bids'>) {
   const statusFilter = asString(searchParams.status)
   const assigneeFilter = asString(searchParams.assignee)
 
-  const supabase = await createSupabaseServerClient()
-
-  // RLS scopes this to the caller's org through the parent tender, so there is
-  // no organization_id to filter on here.
-  let query = supabase
-    .from('tender_bids')
-    .select(
-      '*, tenders!inner(id, title, status), assignee:users!tender_bids_assigned_employee_id_fkey(full_name)'
-    )
-    .order('created_at', { ascending: false })
-    .limit(300)
-
-  if (statusFilter) query = query.eq('bid_status', statusFilter)
-  if (assigneeFilter === 'unassigned') query = query.is('assigned_employee_id', null)
-  else if (assigneeFilter) query = query.eq('assigned_employee_id', assigneeFilter)
-
-  const [{ data: bidData }, employees] = await Promise.all([
-    query,
+  const [summary, employees] = await Promise.all([
+    getBidSummary(),
     getTenderEmployees(user.organization_id),
   ])
 
-  const bids = (bidData ?? []) as unknown as BidListRow[]
+  let bids = summary.all
 
-  const activeCount = bids.filter(
-    (b) => b.bid_status === 'submitted' || b.bid_status === 'under_review'
-  ).length
-  const wonCount = bids.filter((b) => b.bid_status === 'won').length
-  const totalValue = bids
-    .filter((b) => b.bid_status !== 'lost')
-    .reduce((sum, b) => sum + (b.bid_amount ?? 0), 0)
+  if (statusFilter) bids = bids.filter((b) => b.bid_status === statusFilter)
+  if (assigneeFilter === 'unassigned') {
+    bids = bids.filter((b) => b.assigned_employee_id === null)
+  } else if (assigneeFilter) {
+    bids = bids.filter((b) => b.assigned_employee_id === assigneeFilter)
+  }
+
+  const filtered = bids.length !== summary.total
 
   return (
     <div className="space-y-6 p-6">
@@ -64,19 +58,37 @@ export default async function BidsPage(props: PageProps<'/bids'>) {
         <h1 className="text-2xl font-semibold text-brand-slate">Bids</h1>
         <p className="mt-1 text-sm text-text-muted">
           Every bid across every tender — what the department is bidding on right now.
+          {filtered && ` Showing ${bids.length} of ${summary.total}.`}
         </p>
       </div>
 
+      {/*
+        Department-wide, unaffected by the filters below — the same correction made on
+        /tenders. Selecting "Won" used to make "In play" read 0, which looks like the
+        department has nothing outstanding.
+      */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total bids" value={bids.length} />
-        <StatCard label="In play" value={activeCount} hint="Submitted or under review" />
-        <StatCard label="Won" value={wonCount} tone="success" />
+        <StatCard label="Total bids" value={summary.total} />
+        <StatCard label="In play" value={summary.inPlay} hint="Submitted or under review" />
+        <StatCard
+          label="Won"
+          value={summary.won}
+          tone="success"
+          hint={summary.wonValue > 0 ? formatCurrency(summary.wonValue) : undefined}
+        />
         <StatCard
           label="Value in play"
-          value={formatCurrency(totalValue)}
+          value={formatCurrency(summary.valueInPlay)}
           hint="Excludes lost bids"
         />
       </div>
+
+      {summary.capped && (
+        <p className="text-xs text-text-muted">
+          Showing the most recent records only — the figures above cover what could be read
+          in one page, not the full history.
+        </p>
+      )}
 
       <Card className="p-4">
         <BidFilters employees={employees} />

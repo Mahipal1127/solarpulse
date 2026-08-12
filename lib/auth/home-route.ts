@@ -9,11 +9,16 @@ import type { SessionUser } from '@/lib/auth/guards'
  * built, which is honest about the state of the app rather than bouncing them into a
  * CEO route they cannot read.
  *
- * Sales, Distribution and Technical land on their dashboards rather than their task
- * lists: a Sales employee's day starts with their own pipeline and today's
- * follow-ups, a Distribution employee's with what is awaiting approval, on the road,
- * or late, and a Technical engineer's with the site visits Sales is waiting on.
- * CEO-assigned tasks are one section of that view, reachable from the sidebar.
+ * Every module lands on its dashboard rather than its task list: a Sales employee's
+ * day starts with their own pipeline and today's follow-ups, a Distribution
+ * employee's with what is awaiting approval, on the road, or late, a Technical
+ * engineer's with the site visits Sales is waiting on, and a Tender employee's with
+ * the submission deadline closing soonest. CEO-assigned tasks are one section of that
+ * view, reachable from the sidebar.
+ *
+ * Tender used to land on /my-tasks because it had no dashboard to land on. It has one
+ * now, and a missed submission deadline cannot be recovered — the tender simply
+ * closes — so that is what should be on screen first, not a personal task list.
  *
  * Finance is deliberately absent. Their one job inside Distribution is approving a
  * purchase order, and /distribution/purchase-orders is not where their own day
@@ -27,7 +32,12 @@ import type { SessionUser } from '@/lib/auth/guards'
  * suggest it is their module when the one page they can use is a form.
  */
 const DEPARTMENT_HOME: Record<string, string> = {
-  tender: '/my-tasks',
+  /*
+   * Not '/dashboard'. A route group is a naming device, not a URL segment, so
+   * (tender)/dashboard would resolve to the same /dashboard the CEO owns and the two
+   * would collide at build time. Hence /overview.
+   */
+  tender: '/overview',
   sales: '/sales/dashboard',
   distribution: '/distribution/dashboard',
   technical: '/technical/dashboard',

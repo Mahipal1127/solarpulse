@@ -11,13 +11,19 @@ import { ActivityFeed } from '@/components/sales/Dashboard/ActivityFeed'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
 import { getSalesEmployees, getSalesDepartmentId } from '@/lib/sales/queries'
 import {
-  getVisibleLeads,
+  getSalesSummary,
   getDueFollowUps,
+  getDueFollowUpCounts,
   getTargetProgress,
+  getTeamTargetProgress,
   getRecentActivity,
+  type SalesSummary,
 } from '@/lib/sales/dashboard'
 import { SALES_DEPARTMENT_SLUG, isSalesManager } from '@/lib/services/sales'
-import { LEAD_OPEN_STAGES, isFollowUpOverdue, isOverdue, formatCurrency } from '@/lib/format'
+// isFollowUpOverdue is no longer needed here: the overdue figure is counted in SQL
+// now rather than derived from the capped list. FollowUpQueue still applies it per
+// row for the red border, which is where a per-row judgement belongs.
+import { LEAD_OPEN_STAGES, isOverdue, formatCurrency } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,23 +36,60 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
   const searchParams = await props.searchParams
 
   const manager = isSalesManager(user)
-  const seesTeam = manager || user.roleName === 'CEO'
-  const tab = asString(searchParams.tab) === 'team' && seesTeam ? 'team' : 'mine'
+  const isCeo = user.roleName === 'CEO'
+  const seesTeam = manager || isCeo
+
+  /*
+   * The CEO defaults to the Team tab, everyone else to their own work.
+   *
+   * "My work" is a dead screen for the CEO by construction: leads are assigned to
+   * Sales members, targets belong to Sales members, and the CEO is neither — so they
+   * landed on four zeroes, an empty pipeline and "No target set for this period",
+   * with the actual department one unmarked click away. A manager is a genuine
+   * salesperson with their own pipeline, so their personal view stays the default.
+   *
+   * Explicit ?tab= still wins in both directions, so the CEO can reach My work if
+   * they want to see it.
+   */
+  const requestedTab = asString(searchParams.tab)
+  const tab =
+    requestedTab === 'team' || requestedTab === 'mine'
+      ? requestedTab === 'team' && seesTeam
+        ? 'team'
+        : 'mine'
+      : isCeo
+        ? 'team'
+        : 'mine'
 
   const supabase = await createSupabaseServerClient()
 
-  const [allVisibleLeads, dueFollowUps, targetProgress, activity, taskResult] = await Promise.all([
-    getVisibleLeads(user.organization_id),
-    getDueFollowUps(),
-    getTargetProgress(user.id),
-    getRecentActivity(),
-    supabase
-      .from('tasks')
-      .select(TASK_SELECT)
-      .eq('assigned_user_id', user.id)
-      .neq('status', 'archived')
-      .order('due_date', { ascending: true, nullsFirst: false }),
-  ])
+  /*
+   * The follow-up queue is fetched already narrowed to the right person rather than
+   * filtered afterwards.
+   *
+   * This used to fetch the soonest 25 due follow-ups and then keep the ones belonging
+   * to the viewer. For an executive that was fine — RLS had returned nothing else. For
+   * a manager or the CEO, RLS returns the whole department, so 25 colleagues' calls
+   * could fill the cap and leave a manager's own queue rendering "Nothing due today"
+   * while their afternoon was in fact full. Narrowing in SQL means the cap applies to
+   * the rows that will actually be shown.
+   */
+  const followUpOwnerId = tab === 'mine' ? user.id : undefined
+
+  const [summary, dueFollowUps, followUpCounts, targetProgress, activity, taskResult] =
+    await Promise.all([
+      getSalesSummary(user.organization_id),
+      getDueFollowUps({ ownerId: followUpOwnerId }),
+      getDueFollowUpCounts(followUpOwnerId),
+      getTargetProgress(user.id),
+      getRecentActivity(),
+      supabase
+        .from('tasks')
+        .select(TASK_SELECT)
+        .eq('assigned_user_id', user.id)
+        .neq('status', 'archived')
+        .order('due_date', { ascending: true, nullsFirst: false }),
+    ])
 
   const myTasks = (taskResult.data ?? []) as unknown as AssignedTask[]
 
@@ -55,15 +98,10 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
   // already identical — sales_exec_own_leads returned nothing else — so this
   // filter is never what keeps a colleague's pipeline hidden.
   const myLeads = seesTeam
-    ? allVisibleLeads.filter((l) => l.assigned_to === user.id)
-    : allVisibleLeads
-
-  const myFollowUps = seesTeam
-    ? dueFollowUps.filter((f) => f.lead?.assigned_to === user.id)
-    : dueFollowUps
+    ? summary.all.filter((l) => l.assigned_to === user.id)
+    : summary.all
 
   const myOpenLeads = myLeads.filter((l) => LEAD_OPEN_STAGES.includes(l.status))
-  const myOverdueFollowUps = myFollowUps.filter(isFollowUpOverdue).length
   const myOverdueTasks = myTasks.filter(isOverdue).length
   const myOpenTasks = myTasks.filter((t) => t.status !== 'completed').length
 
@@ -83,7 +121,12 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
 
         {seesTeam && (
           <div className={SEGMENT_TRACK}>
-            <TabLink href="/sales/dashboard" active={tab === 'mine'} label="My work" />
+            {/*
+              Both hrefs name their tab explicitly. A bare /sales/dashboard would fall
+              through to the default, which is 'team' for the CEO — so the My work tab
+              would bounce them straight back and read as broken.
+            */}
+            <TabLink href="/sales/dashboard?tab=mine" active={tab === 'mine'} label="My work" />
             <TabLink href="/sales/dashboard?tab=team" active={tab === 'team'} label="Team" />
           </div>
         )}
@@ -92,8 +135,9 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
       {tab === 'team' ? (
         <TeamView
           organizationId={user.organization_id}
-          leads={allVisibleLeads}
+          summary={summary}
           followUps={dueFollowUps}
+          followUpCounts={followUpCounts}
           canDelegate={manager}
         />
       ) : (
@@ -104,12 +148,19 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
               value={myOpenLeads.length}
               hint={`${myLeads.length} total assigned`}
             />
+            {/*
+              Counted in SQL, not taken from the list's length: the list stops at 25
+              rows, so deriving the figure from it would read "25 due" forever once a
+              queue got long.
+            */}
             <StatCard
               label="Follow-ups Due"
-              value={myFollowUps.length}
-              tone={myOverdueFollowUps > 0 ? 'danger' : 'default'}
+              value={followUpCounts.due}
+              tone={followUpCounts.overdue > 0 ? 'danger' : 'default'}
               hint={
-                myOverdueFollowUps > 0 ? `${myOverdueFollowUps} already overdue` : 'Today or earlier'
+                followUpCounts.overdue > 0
+                  ? `${followUpCounts.overdue} already overdue`
+                  : 'Today or earlier'
               }
             />
             <StatCard
@@ -118,14 +169,28 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
               tone={myOverdueTasks > 0 ? 'warning' : 'default'}
               hint={myOverdueTasks > 0 ? `${myOverdueTasks} past due` : 'Assigned by the CEO'}
             />
-            <StatCard
-              label="Won This Period"
-              value={
-                targetProgress ? formatCurrency(targetProgress.achievedAmount) : `${wonCount(myLeads)}`
-              }
-              tone="success"
-              hint={targetProgress ? `${targetProgress.achievedDeals} deals closed` : 'Leads won'}
-            />
+            {/*
+              Two different measurements, so two different labels. With a target set
+              this is money closed inside that period. Without one there is no period
+              to speak of, and the fallback counts won leads for all time — which the
+              old version showed under the heading "Won This Period", making a
+              lifetime tally look like this month's performance.
+            */}
+            {targetProgress ? (
+              <StatCard
+                label="Won This Period"
+                value={formatCurrency(targetProgress.achievedAmount)}
+                tone="success"
+                hint={`${targetProgress.achievedDeals} deals closed`}
+              />
+            ) : (
+              <StatCard
+                label="Leads Won"
+                value={wonCount(myLeads)}
+                tone="success"
+                hint="All time · no target set"
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -134,7 +199,16 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
             <Card className="lg:col-span-2">
               <CardHeader
                 title="Today's follow-ups"
-                subtitle="Due today or already past due. Overdue is computed from the schedule, not a stored flag."
+                /*
+                  Says so when the list is shorter than the count above it. The queue
+                  stops at 25 rows, and a card reading "40 due" over a list of 25 with
+                  nothing to explain the gap looks like a bug in one of the two.
+                */
+                subtitle={
+                  followUpCounts.due > dueFollowUps.length
+                    ? `The ${dueFollowUps.length} soonest of ${followUpCounts.due} due. Overdue is computed from the schedule, not a stored flag.`
+                    : 'Due today or already past due. Overdue is computed from the schedule, not a stored flag.'
+                }
                 action={
                   <Link
                     href="/sales/leads"
@@ -144,7 +218,7 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
                   </Link>
                 }
               />
-              <FollowUpQueue followUps={myFollowUps} readOnly={readOnly} />
+              <FollowUpQueue followUps={dueFollowUps} readOnly={readOnly} />
             </Card>
           </div>
 
@@ -198,13 +272,15 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
  */
 async function TeamView({
   organizationId,
-  leads,
+  summary,
   followUps,
+  followUpCounts,
   canDelegate,
 }: {
   organizationId: string
-  leads: Awaited<ReturnType<typeof getVisibleLeads>>
+  summary: SalesSummary
   followUps: Awaited<ReturnType<typeof getDueFollowUps>>
+  followUpCounts: Awaited<ReturnType<typeof getDueFollowUpCounts>>
   canDelegate: boolean
 }) {
   const supabase = await createSupabaseServerClient()
@@ -230,28 +306,40 @@ async function TeamView({
 
   const inboxTasks = (inboxData ?? []) as unknown as AssignedTask[]
 
-  // One target lookup per employee. The Sales roster is small and these run in
-  // parallel; if a department ever outgrows that, this becomes one grouped query.
-  const teamTargets = await Promise.all(
-    employees.map(async (employee) => ({
-      employee,
-      progress: await getTargetProgress(employee.id),
-    }))
-  )
+  /*
+   * Two queries for the whole roster, not two per person. This was a Promise.all of
+   * getTargetProgress() per employee — 2 round trips each, so a ten-person department
+   * opened twenty connections to render one row of cards. The old comment here said
+   * this should become one grouped query if the roster outgrew it; it now is one.
+   *
+   * Mapped back over `employees` so the cards stay in roster order rather than in
+   * whatever order Postgres returned the targets.
+   */
+  const targetsByUser = await getTeamTargetProgress(employees.map((e) => e.id))
+  const teamTargets = employees.map((employee) => ({
+    employee,
+    progress: targetsByUser.get(employee.id) ?? null,
+  }))
 
-  const openLeads = leads.filter((l) => LEAD_OPEN_STAGES.includes(l.status))
-  const overdueFollowUps = followUps.filter(isFollowUpOverdue).length
-  const unassignedLeads = leads.filter((l) => l.assigned_to === null).length
+  const openLeads = summary.all.filter((l) => LEAD_OPEN_STAGES.includes(l.status))
 
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Team Open Leads" value={openLeads.length} hint={`${leads.length} total`} />
+        <StatCard
+          label="Team Open Leads"
+          value={summary.open}
+          hint={`${summary.total} total · ${summary.inNegotiation} in negotiation`}
+        />
         <StatCard
           label="Follow-ups Due"
-          value={followUps.length}
-          tone={overdueFollowUps > 0 ? 'danger' : 'default'}
-          hint={overdueFollowUps > 0 ? `${overdueFollowUps} overdue` : 'Across the department'}
+          value={followUpCounts.due}
+          tone={followUpCounts.overdue > 0 ? 'danger' : 'default'}
+          hint={
+            followUpCounts.overdue > 0
+              ? `${followUpCounts.overdue} overdue`
+              : 'Across the department'
+          }
         />
         <StatCard
           label="Awaiting Delegation"
@@ -261,10 +349,18 @@ async function TeamView({
         />
         <StatCard
           label="Unassigned Leads"
-          value={unassignedLeads}
-          tone={unassignedLeads > 0 ? 'warning' : 'default'}
+          value={summary.unassigned}
+          tone={summary.unassigned > 0 ? 'warning' : 'default'}
+          hint="Nobody is chasing these"
         />
       </div>
+
+      {summary.capped && (
+        <p className="text-xs text-text-muted">
+          Showing the most recent leads only — the figures above cover what could be read in
+          one page, not the full history.
+        </p>
+      )}
 
       {canDelegate && (
         <Card>

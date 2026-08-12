@@ -24,7 +24,12 @@ export const aiPayloadSchema = z.object({
   due_date: z.string().nullable(),
   task_title: z.string().nullable(),
   status: z.enum(['pending', 'in_progress', 'delayed', 'completed']).nullable(),
-  progress_percent: z.number().int().min(0).max(100).nullable(),
+  /*
+   * No progress_percent. The AI acts as the CEO, and the CEO does not author an
+   * employee's progress — see the note in lib/validation/schemas.ts. Leaving it
+   * here would have let the assistant do by proposal what the UI refuses to do
+   * by hand.
+   */
   note: z.string().nullable(),
 })
 
@@ -84,7 +89,6 @@ export const AI_TURN_JSON_SCHEMA = {
           'due_date',
           'task_title',
           'status',
-          'progress_percent',
           'note',
         ],
         properties: {
@@ -108,7 +112,6 @@ export const AI_TURN_JSON_SCHEMA = {
             type: ['string', 'null'],
             enum: ['pending', 'in_progress', 'delayed', 'completed', null],
           },
-          progress_percent: { type: ['integer', 'null'], minimum: 0, maximum: 100 },
           note: { type: ['string', 'null'] },
         },
       },
@@ -132,7 +135,7 @@ export function validateProposal(turn: AITurn): string | null {
       return null
     case 'update_task':
       if (!p.task_title?.trim()) return 'The proposed update does not identify a task.'
-      if (p.status === null && p.progress_percent === null && !p.note?.trim()) {
+      if (p.status === null && !p.note?.trim()) {
         return 'The proposed update changes nothing.'
       }
       return null

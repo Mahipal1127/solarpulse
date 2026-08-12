@@ -21,15 +21,30 @@ export const updateTaskSchema = z
     priority: taskPriority.optional(),
     status: taskStatus.optional(),
     due_date: z.string().datetime().nullable().optional(),
-    progress_percent: z.number().int().min(0).max(100).optional(),
     note: z.string().trim().max(2000).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' })
 
+/*
+ * `progress_percent` is deliberately absent above, and this is a rule rather than
+ * an omission.
+ *
+ * Progress is a report from the person doing the work. Every write to a task
+ * appends a task_updates row stamped with `updated_by`, so a CEO or a manager
+ * dragging a progress slider authors a progress report in someone else's name —
+ * the number stops being evidence and the timeline stops being trustworthy.
+ * "60% done" has to mean the assignee said so.
+ *
+ * Management still has every lever it actually needs: reassign, reprioritise,
+ * change the due date, mark something delayed, archive, reopen, and add a note.
+ * What it cannot do is claim work happened. Progress arrives through
+ * updateTaskProgressSchema below, from the assignee.
+ */
+
 /**
  * What a department employee may change on their own task.
  * They cannot reassign, reprioritize, or archive — only move it forward and
- * log progress. The CEO PATCH route accepts the full updateTaskSchema.
+ * log progress. This is the only path that may write progress_percent.
  */
 export const updateTaskProgressSchema = z
   .object({

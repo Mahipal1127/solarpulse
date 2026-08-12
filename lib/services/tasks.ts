@@ -98,7 +98,7 @@ export async function updateTask(
 
   const { data: existing } = await supabase
     .from('tasks')
-    .select('id, organization_id, status, progress_percent')
+    .select('id')
     .eq('id', taskId)
     .maybeSingle()
 
@@ -113,14 +113,20 @@ export async function updateTask(
 
   if (error) throw new ServiceError(error.message, 400)
 
-  // Any status/progress change appends to the immutable timeline, so the CEO's
-  // own edits show up in Live Progress Tracking alongside department updates.
-  if (note || fields.status || fields.progress_percent !== undefined) {
+  /*
+   * A status change or a note appends to the timeline, so a management action is
+   * visible in Live Progress Tracking alongside the assignee's own updates.
+   *
+   * `progress_percent` is absent on purpose: this row is stamped `updated_by`, and
+   * writing progress here would file a progress report in the manager's name on
+   * someone else's task. Only updateTaskProgress() — the assignee's own path —
+   * writes that number.
+   */
+  if (note || fields.status) {
     await supabase.from('task_updates').insert({
       task_id: taskId,
       updated_by: user.id,
       note: note ?? null,
-      progress_percent: fields.progress_percent ?? null,
       status: fields.status ?? null,
     })
   }

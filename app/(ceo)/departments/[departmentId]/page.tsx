@@ -3,9 +3,16 @@ import { notFound } from 'next/navigation'
 import { requireRole } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Card, CardHeader, EmptyState, Badge } from '@/components/ui/primitives'
-import { TenderList, type TenderRow } from '@/components/tender/TenderList/TenderList'
+import { TenderList } from '@/components/tender/TenderList/TenderList'
+import {
+  getTenderSummary,
+  getBidSummary,
+  CLOSING_SOON_DAYS,
+  type TenderSummary,
+  type BidSummary,
+} from '@/lib/tender/dashboard'
 import { LeadList } from '@/components/sales/LeadList/LeadList'
-import type { LeadRow } from '@/components/sales/LeadPipeline/LeadPipeline'
+import { getSalesSummary, type SalesSummary } from '@/lib/sales/dashboard'
 import {
   getPurchaseOrderSummary,
   getDispatchSummary,
@@ -66,6 +73,19 @@ function MiniStat({
   )
 }
 
+/**
+ * A label/figure pair for inside a card, where MiniStat's border and padding would
+ * nest a box in a box. Same role Technical's local `Row` plays on its own dashboard.
+ */
+function MiniRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between">
+      <p className="text-xs font-medium uppercase tracking-wide text-text-muted">{label}</p>
+      <p className="text-lg font-semibold text-brand-slate">{value}</p>
+    </div>
+  )
+}
+
 export default async function DepartmentDetailPage(props: PageProps<'/departments/[departmentId]'>) {
   const user = await requireRole('CEO')
   const { departmentId } = await props.params
@@ -101,49 +121,60 @@ export default async function DepartmentDetailPage(props: PageProps<'/department
   const reports = (reportData ?? []) as DepartmentReport[]
   const tasks = (taskData ?? []) as unknown as DepartmentTask[]
 
-  // TODO: wire into department_reports rollup once that job exists. No daily
-  // rollup job exists in the codebase yet, so the summary cards above stay
-  // empty for Tender until one does; this mini-list reads `tenders` directly.
-  //
-  // Tender-specific drill-down. `tenders` has no department_id — the table is
-  // the tender department's data by definition, so the slug check below is the
-  // department filter and organization_id is the tenancy filter.
-  //
-  // Read-only for the CEO: ceo_full_access_tenders grants the select, and
-  // assertCanWrite() in the tender service refuses every write, so nothing
-  // actionable is rendered here.
-  let tenders: TenderRow[] = []
+  /**
+   * Tender drill-down, now reusing the module's own aggregations for the same reason
+   * Distribution's and Technical's do: overdue is derived from the clock, and
+   * re-deriving it here is how the CEO's number and the department's number drift
+   * apart.
+   *
+   * This section used to be a bare ten-row list with a standing TODO and no figures
+   * at all — so the CEO could see ten tender titles but not how many were past their
+   * deadline, which is the one thing about a tender that cannot be recovered. The
+   * TODO said to wait for a department_reports rollup job; that job still does not
+   * exist, and it was never needed for this. getTenderSummary() reads the same rows
+   * with the same policy and counts them once.
+   *
+   * `tenders` has no department_id — the table is the Tender department's data by
+   * definition, so the slug check is the department filter and organization_id is the
+   * tenancy filter.
+   *
+   * Read-only for the CEO: ceo_full_access_tenders grants the select, and
+   * assertCanWrite() in the tender service refuses every write, so nothing actionable
+   * is rendered here.
+   */
+  let tender: { tenders: TenderSummary; bids: BidSummary } | null = null
   if (department.slug === 'tender') {
-    const { data: tenderData } = await supabase
-      .from('tenders')
-      .select('*, assignee:users!tenders_assigned_employee_id_fkey(full_name)')
-      .eq('organization_id', user.organization_id)
-      .neq('status', 'cancelled')
-      .order('submission_deadline', { ascending: true })
-      .limit(10)
-
-    tenders = (tenderData ?? []) as unknown as TenderRow[]
+    const [tenderSummary, bidSummary] = await Promise.all([
+      getTenderSummary(user.organization_id),
+      getBidSummary(),
+    ])
+    tender = { tenders: tenderSummary, bids: bidSummary }
   }
 
-  // Sales drill-down, same shape as the tender one above: `leads` has no
-  // department_id either, so the slug check is the department filter and
-  // organization_id is the tenancy filter.
-  //
-  // The CEO sees the whole department's pipeline here — ceo_full_access_leads
-  // grants it org-wide, which is exactly the visibility the blueprint calls for.
-  // Still read-only: assertCanWrite() in the sales service refuses every write
-  // from outside the department, so nothing actionable is rendered.
-  let leads: LeadRow[] = []
+  /**
+   * Sales drill-down, now reusing the module's own aggregation for the same reason
+   * Distribution's, Technical's and Tender's do — so the CEO's numbers and the
+   * department's cannot drift apart.
+   *
+   * This section used to fetch ten open leads inline and render them with no figures
+   * at all: the CEO could see ten names but not how many leads were unassigned, how
+   * many sat in negotiation, or what had closed this month. Those are the questions a
+   * drill-down exists to answer, and every other department's answered them.
+   *
+   * `leads` has no department_id — the table is the Sales department's data by
+   * definition, so the slug check is the department filter and organization_id is the
+   * tenancy filter. Revenue comes from deal_closures, which has no organization_id at
+   * all: RLS scopes it through the parent lead (auth_lead_in_org), so there is nothing
+   * to filter on here.
+   *
+   * Read-only: ceo_full_access_leads grants the select org-wide, and assertCanWrite()
+   * in the sales service refuses every write from outside the department. Sales
+   * targets are the one documented exception, and they are set on the Reports page
+   * rather than here.
+   */
+  let sales: SalesSummary | null = null
   if (department.slug === 'sales') {
-    const { data: leadData } = await supabase
-      .from('leads')
-      .select('*, assignee:users!leads_assigned_to_fkey(full_name)')
-      .eq('organization_id', user.organization_id)
-      .in('status', LEAD_OPEN_STAGES)
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    leads = (leadData ?? []) as unknown as LeadRow[]
+    sales = await getSalesSummary(user.organization_id)
   }
 
   /**
@@ -214,42 +245,144 @@ export default async function DepartmentDetailPage(props: PageProps<'/department
         </p>
       </header>
 
-      {department.slug === 'tender' && (
-        <Card>
-          <CardHeader
-            title="Recent tenders"
-            subtitle="Soonest deadline first · read-only"
-          />
-          <TenderList
-            tenders={tenders}
-            compact
-            emptyTitle="No active tenders"
-            emptyDescription="Tenders logged by the Tender department will appear here."
-          />
-        </Card>
+      {tender && (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <div className="grid flex-1 grid-cols-3 gap-3">
+              <MiniStat
+                label="Active tenders"
+                value={tender.tenders.active}
+                note={
+                  tender.tenders.overdue.length > 0
+                    ? `${tender.tenders.overdue.length} past their deadline`
+                    : `${tender.tenders.won} won of ${tender.tenders.total} logged`
+                }
+                alarm={tender.tenders.overdue.length > 0}
+              />
+              <MiniStat
+                label={`Closing in ${CLOSING_SOON_DAYS} days`}
+                value={tender.tenders.closingSoon.length}
+                note="Still open, deadline near"
+                alarm={tender.tenders.closingSoon.length > 0}
+              />
+              <MiniStat
+                label="Unassigned"
+                value={tender.tenders.unassigned.length}
+                note="Active, with nobody named"
+                alarm={tender.tenders.unassigned.length > 0}
+              />
+            </div>
+
+            <Link
+              href="/overview"
+              className="shrink-0 text-xs font-medium text-brand-slate hover:text-brand-slate"
+            >
+              Open Tender module →
+            </Link>
+          </div>
+
+          {/*
+            Past the deadline gets its own panel above the list, the same treatment
+            Technical's handoff queue gets. It is the only thing in this department
+            that represents work already lost rather than outstanding, and a CEO
+            scanning a drill-down should not have to infer it from a date column.
+          */}
+          {tender.tenders.overdue.length > 0 && (
+            <Card className="border-status-danger/30">
+              <CardHeader
+                title="Past the deadline"
+                subtitle="Never submitted — the submission window has closed · read-only"
+              />
+              <TenderList tenders={tender.tenders.overdue.slice(0, 5)} compact />
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader
+                title="Next deadlines"
+                subtitle={`Active tenders, soonest first · ${formatCurrency(
+                  tender.tenders.pipelineValue
+                )} in play · read-only`}
+              />
+              <TenderList
+                tenders={tender.tenders.upcoming}
+                compact
+                emptyTitle="No active tenders"
+                emptyDescription="Tenders logged by the Tender department will appear here."
+              />
+            </Card>
+
+            <Card>
+              <CardHeader
+                title="Bids"
+                subtitle="Where the department's submissions stand · read-only"
+              />
+              <div className="space-y-3 px-5 py-4">
+                <MiniRow label="In play" value={tender.bids.inPlay} />
+                <MiniRow label="Won" value={tender.bids.won} />
+                <MiniRow label="Lost" value={tender.bids.lost} />
+                <div className="flex items-center justify-between border-t border-border-subtle pt-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                    Value in play
+                  </p>
+                  <p className="text-sm font-semibold text-brand-slate">
+                    {formatCurrency(tender.bids.valueInPlay)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </>
       )}
 
-      {department.slug === 'sales' && (
-        <Card>
-          <CardHeader
-            title="Open pipeline"
-            subtitle="Newest leads first, with their owner · read-only"
-            action={
-              <Link
-                href="/sales/dashboard"
-                className="text-xs font-medium text-brand-slate hover:text-brand-slate"
-              >
-                Open Sales module →
-              </Link>
-            }
-          />
-          <LeadList
-            leads={leads}
-            showAssignee
-            emptyTitle="No open leads"
-            emptyDescription="Leads logged by the Sales department will appear here."
-          />
-        </Card>
+      {sales && (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <div className="grid flex-1 grid-cols-3 gap-3">
+              <MiniStat
+                label="Open leads"
+                value={sales.open}
+                note={`${sales.total} logged · ${sales.won} won`}
+              />
+              <MiniStat
+                label="Unassigned"
+                value={sales.unassigned}
+                note="Nobody is chasing these"
+                alarm={sales.unassigned > 0}
+              />
+              <MiniStat
+                label="In negotiation"
+                value={sales.inNegotiation}
+                note="The stage that goes stale unchased"
+              />
+            </div>
+
+            <Link
+              href="/sales/dashboard"
+              className="shrink-0 text-xs font-medium text-brand-slate hover:text-brand-slate"
+            >
+              Open Sales module →
+            </Link>
+          </div>
+
+          <Card>
+            <CardHeader
+              title="Open pipeline"
+              subtitle={`Newest leads first, with their owner · ${formatCurrency(
+                sales.revenueThisMonth
+              )} closed this month across ${sales.dealsThisMonth} ${
+                sales.dealsThisMonth === 1 ? 'deal' : 'deals'
+              } · read-only`}
+            />
+            <LeadList
+              leads={sales.all.filter((l) => LEAD_OPEN_STAGES.includes(l.status)).slice(0, 10)}
+              showAssignee
+              emptyTitle="No open leads"
+              emptyDescription="Leads logged by the Sales department will appear here."
+            />
+          </Card>
+        </>
       )}
 
       {distribution && (

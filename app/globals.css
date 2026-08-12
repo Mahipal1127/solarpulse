@@ -192,6 +192,16 @@ body {
   border-color: color-mix(in srgb, var(--color-status-info) 25%, #fff);
 }
 
+/* The pending-destruction strip: "this key will be removed when you save". Sibling
+   of the two above so a danger banner cannot drift from them — it was missing when
+   the AI settings form needed one, and a class that does not exist emits no CSS
+   rather than failing, so the panel would simply have rendered unstyled. */
+@utility notice-danger {
+  background-color: color-mix(in srgb, var(--color-status-danger) 10%, #fff);
+  color: var(--color-status-danger);
+  border-color: color-mix(in srgb, var(--color-status-danger) 25%, #fff);
+}
+
 /* ---------------------------------------------------------------------------
    Focus ring.
    ---------------------------------------------------------------------------
@@ -259,6 +269,210 @@ body {
   background: var(--color-surface-card);
   border: 1px solid var(--color-border-subtle);
   border-radius: 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Chat surface
+   ---------------------------------------------------------------------------
+   The CEO dashboard is a conversation, so it gets the one genuinely atmospheric
+   background in the app: a very low gold wash behind the greeting, fading out
+   before it reaches the composer. Kept under 8% so text contrast is unaffected —
+   this is light, not a tint over content.
+
+   Same construction as .login-bg-sky, deliberately: those are the app's two
+   full-canvas moments, and they should feel like the same product.
+   --------------------------------------------------------------------------- */
+
+.chat-ambient {
+  background:
+    radial-gradient(
+      ellipse 70% 55% at 50% 0%,
+      color-mix(in srgb, var(--color-brand-gold) 7%, transparent) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 50% 40% at 85% 15%,
+      color-mix(in srgb, var(--color-brand-orange) 5%, transparent) 0%,
+      transparent 65%
+    ),
+    var(--color-surface-bg);
+}
+
+/*
+   The composer's own lift. A shadow rather than a border on the docked state, so
+   messages scrolling underneath pass behind something soft instead of colliding
+   with a hard line.
+*/
+.chat-composer {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border-subtle);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-brand-slate) 4%, transparent),
+    0 8px 24px -12px color-mix(in srgb, var(--color-brand-slate) 10%, transparent);
+}
+
+.chat-composer:focus-within {
+  border-color: var(--color-brand-gold);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--color-brand-slate) 4%, transparent),
+    0 8px 28px -12px color-mix(in srgb, var(--color-brand-gold) 22%, transparent);
+}
+
+/*
+   No second ring inside the box.
+
+   The base :focus-visible rule above puts a 2px gold outline on every textarea, which
+   inside the composer landed a gold rectangle around the text itself while the
+   composer's own border was already gold — two indicators for one focus.
+
+   The textarea carries Tailwind's `outline-none`, and that has never worked here:
+   utilities live in `@layer utilities`, the base rule is unlayered, and unlayered CSS
+   wins over layered CSS in the cascade no matter how specific the layered rule is.
+   Fixing it in the stylesheet rather than in the component is therefore the only place
+   it can be fixed — and this rule beats the base one on specificity (0,2,1 vs 0,1,0),
+   so it does not depend on source order either.
+
+   Scoped to the textarea on purpose. The send button beside it stays in the base rule:
+   it is a discrete tab stop, the wrapper's border says nothing about which of the two
+   children is focused, and a keyboard user moving from the input to Send needs to see
+   that they got there.
+*/
+.chat-composer textarea:focus-visible {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Motion
+   ---------------------------------------------------------------------------
+   Declared here as real keyframes because they have to be. The user menu in
+   OverviewHeader carries `animate-in fade-in slide-in-from-top-2`, which are
+   tailwindcss-animate classes — that package is not a dependency, so those class
+   names emit no CSS and that menu has never actually animated. Anything below is
+   used only if it is defined here.
+
+   Durations are short on purpose. A chat reply arriving is not an event that wants
+   celebrating; the motion exists to show where new content came from.
+   --------------------------------------------------------------------------- */
+
+@keyframes chat-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chat-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Three dots breathing out of phase. Opacity and scale only — no vertical bounce,
+   which reads as playful and belongs in a toy, not an ERP. */
+@keyframes chat-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Dictation
+   ---------------------------------------------------------------------------
+   A ring expanding out from under the mic button while it listens, plus a slow
+   breath on the button itself. Two rings offset in time read as a repeating pulse
+   rather than as one thing that happens periodically.
+
+   The ring is a separate absolutely-positioned span rather than a box-shadow on
+   the button, because it has to scale past the button's own bounds without
+   changing layout — and `transform: scale` on a pseudo-element cannot be composited
+   independently of the button's own hover transition.
+
+   `mic-listening` is a genuine state indicator, not decoration: it is the only
+   thing on screen saying the microphone is live. That is why the reduced-motion
+   block below leaves the colour change alone and removes only the movement.
+   --------------------------------------------------------------------------- */
+
+@keyframes mic-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.3);
+    opacity: 0;
+  }
+}
+
+@keyframes mic-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+/* The interim-transcript pill sliding up as speech is recognised. */
+@keyframes mic-caption {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@theme {
+  --animate-chat-rise: chat-rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-chat-fade: chat-fade 0.4s ease-out both;
+  --animate-chat-pulse: chat-pulse 1.2s ease-in-out infinite;
+  --animate-mic-ring: mic-ring 1.8s ease-out infinite;
+  --animate-mic-breathe: mic-breathe 1.8s ease-in-out infinite;
+  --animate-mic-caption: mic-caption 0.2s ease-out both;
+}
+
+/*
+   Anyone who has asked their OS to stop moving things gets a static interface.
+   The dots keep their opacity cycle — with animation removed entirely, a "thinking"
+   indicator becomes three inert dots that look like a rendering bug rather than
+   work in progress.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .animate-chat-rise,
+  .animate-chat-fade,
+  .animate-mic-caption,
+  .animate-mic-breathe {
+    animation: none;
+  }
+
+  /*
+     The expanding ring is removed outright rather than stilled. Frozen at scale(1)
+     with 45% opacity it would sit as a permanent halo around the button, which
+     reads as a focus ring that will not go away. The button's fill and label carry
+     the listening state on their own.
+  */
+  .animate-mic-ring {
+    display: none;
+  }
 }
 
 /* Custom scrollbar */

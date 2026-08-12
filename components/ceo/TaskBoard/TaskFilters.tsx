@@ -3,14 +3,12 @@
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { Department } from '@/lib/types'
 
-const STATUSES = [
-  { value: '', label: 'All statuses' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'delayed', label: 'Delayed' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'archived', label: 'Archived' },
-]
+/*
+ * No status control here. Status is chosen from the counted pill row on the tasks
+ * page, which a dropdown cannot match — the pills show how many tasks sit in each
+ * status before you filter by any of them. Two controls writing one `status` param
+ * would also fall out of step the moment either was used.
+ */
 
 const PRIORITIES = [
   { value: '', label: 'All priorities' },
@@ -49,19 +47,6 @@ export function TaskFilters({ departments }: { departments: Department[] }) {
         {departments.map((d) => (
           <option key={d.id} value={d.id}>
             {d.name}
-          </option>
-        ))}
-      </select>
-
-      <select
-        aria-label="Filter by status"
-        className={selectClass}
-        value={searchParams.get('status') ?? ''}
-        onChange={(e) => setParam('status', e.target.value)}
-      >
-        {STATUSES.map((s) => (
-          <option key={s.value} value={s.value}>
-            {s.label}
           </option>
         ))}
       </select>

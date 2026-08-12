@@ -36,6 +36,27 @@ export function formatCurrency(amount: number | null | undefined): string {
   return INR.format(amount)
 }
 
+/**
+ * Indian-notation compact currency: ₹12.5L, ₹1.3Cr. For dashboard tiles, where a
+ * full ₹1,25,00,000 would either wrap or shrink the type until the figure beside it
+ * no longer reads as the same size.
+ *
+ * Verified to produce L/Cr rather than M/B on this runtime's ICU data. Use
+ * formatCurrency anywhere the exact rupee matters — an invoice, a PO total, a
+ * confirmation dialog. Rounding is fine on a tile and wrong on a document.
+ */
+const INR_COMPACT = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+export function formatCompactCurrency(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined) return '—'
+  return INR_COMPACT.format(amount)
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return '—'
   return new Date(value).toLocaleDateString('en-IN', {
@@ -132,6 +153,35 @@ export const STATUS_STYLES: Record<TaskStatus, string> = {
   delayed: 'badge-danger',
   completed: 'badge-success',
   archived: 'badge-neutral',
+}
+
+/**
+ * Left-edge rule marking priority on a task row.
+ *
+ * Tokens, not palette values. The task list previously hard-coded rose-500 /
+ * orange-500 / blue-500 / slate-400 here, which is the exact thing the note above
+ * forbids: four hues from outside the system, so "urgent" was a different red from
+ * every other danger signal in the app. These map onto the same four status colors
+ * the badges use, so a priority and a status agree on what red means.
+ */
+export const PRIORITY_BORDER: Record<TaskPriority, string> = {
+  urgent: 'border-l-status-danger',
+  high: 'border-l-status-warning',
+  medium: 'border-l-status-info',
+  low: 'border-l-border-subtle',
+}
+
+/**
+ * Small filled dot echoing a task's status, for the leading edge of a list row.
+ * Same four colors as the badges — the dot is a scannable restatement of the badge
+ * on the far side of the row, not a second signal.
+ */
+export const STATUS_DOT: Record<TaskStatus, string> = {
+  pending: 'bg-text-muted/40',
+  in_progress: 'bg-status-info',
+  delayed: 'bg-status-danger',
+  completed: 'bg-status-success',
+  archived: 'bg-text-muted/30',
 }
 
 export const APPROVAL_STATUS_STYLES: Record<ApprovalStatus, string> = {
