@@ -20,11 +20,11 @@ import type { SessionUser } from '@/lib/auth/guards'
  * now, and a missed submission deadline cannot be recovered — the tender simply
  * closes — so that is what should be on screen first, not a personal task list.
  *
- * Finance is deliberately absent. Their one job inside Distribution is approving a
- * purchase order, and /distribution/purchase-orders is not where their own day
- * starts — sending them there would imply Distribution is their module. They keep
- * resolving to /forbidden until the Finance module exists; the layout still admits
- * them if they navigate in.
+ * Finance now has its own module, so it lands on /finance/dashboard. Its Accounts child
+ * department (0002 seeds 'accounts' under 'finance') is the same module — the blueprint's
+ * Accounts scope (invoices, bills, ledger, receipts) is Finance — so accounts resolves
+ * there too. Approving a Distribution purchase order remains one action within that module,
+ * not where their day starts.
  *
  * The same reasoning keeps every other department off /technical/it-support even
  * though raising a ticket there is open to the whole organization. Somebody's day
@@ -41,6 +41,29 @@ const DEPARTMENT_HOME: Record<string, string> = {
   sales: '/sales/dashboard',
   distribution: '/distribution/dashboard',
   technical: '/technical/dashboard',
+  // Hyphen, matching the slug seeded in 0002. The module lives under a literal
+  // /om/* path rather than an (om) route group, for the same /dashboard-collision
+  // reason the comment above gives.
+  'operations-maintenance': '/om/dashboard',
+  // Literal /discom/* path, not a (discom) route group — same /dashboard-collision
+  // reason. Slug is lowercase 'discom', seeded in 0002.
+  discom: '/discom/dashboard',
+  // Literal /marketing/* path, not a (marketing) route group — same collision
+  // reason. Slug is 'marketing-training' (hyphen), seeded in 0002; the build spec's
+  // 'marketing_training' underscore is wrong.
+  'marketing-training': '/marketing/dashboard',
+  // Literal /hr/* path, not an (hr) route group — same /dashboard-collision reason.
+  // Slug is 'hr', seeded in 0002.
+  hr: '/hr/dashboard',
+  // Literal /finance/* path, not a (finance) route group — same /dashboard-collision
+  // reason. Slug is 'finance', seeded in 0002; its 'accounts' child (also 0002) is the
+  // same module and lands here too.
+  finance: '/finance/dashboard',
+  accounts: '/finance/dashboard',
+  // Literal /store/* path, not a (store) route group — same /dashboard-collision
+  // reason. Slug is 'store', seeded in 0002. Lands on the dashboard (low-stock
+  // alerts + the person's own movements/tasks), not the movement log.
+  store: '/store/dashboard',
 }
 
 export function homeRouteFor(
