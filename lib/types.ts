@@ -1049,6 +1049,13 @@ export interface Employee {
   phone: string | null
   emergency_contact: string | null
   employment_status: EmploymentStatus
+  // Onboarding / ID-card additions (0018). profile_photo_path & id_card_file_path point into the
+  // hr-documents bucket under '{employee_id}/...'. must_change_password gates first-login.
+  profile_photo_path: string | null
+  id_card_generated_at: string | null
+  id_card_file_path: string | null
+  whatsapp_number: string | null
+  must_change_password: boolean
   created_at: string
   updated_at: string
 }

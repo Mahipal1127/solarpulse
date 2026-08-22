@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireDepartment } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG, isHrLead, listRecentSalaryRecords } from '@/lib/services/hr'
 import { getEmployeeRoster } from '@/lib/hr/dashboard'
@@ -88,7 +89,14 @@ export default async function PayrollPage() {
               <tbody className="divide-y divide-border-subtle">
                 {records.map((r) => (
                   <tr key={r.id} className="transition-colors hover:bg-surface-bg">
-                    <td className="px-4 py-3 text-brand-slate">{r.employeeName}</td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/hr/employees/${r.employee_id}`}
+                        className="text-brand-slate hover:text-brand-gold hover:underline"
+                      >
+                        {r.employeeName}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-text-muted">{formatDate(r.effective_month)}</td>
                     <td className="px-4 py-3 text-right tabular-nums text-text-muted">
                       {formatCurrency(r.base_salary)}

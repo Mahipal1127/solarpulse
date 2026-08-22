@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireDepartment } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG } from '@/lib/services/hr'
 import { getLeaveQueue } from '@/lib/hr/dashboard'
@@ -63,6 +64,7 @@ function LeaveTable({
 }: {
   rows: {
     id: string
+    employee_id: string
     leave_type: keyof typeof LEAVE_TYPE_LABELS
     start_date: string
     end_date: string
@@ -87,7 +89,14 @@ function LeaveTable({
         <tbody className="divide-y divide-border-subtle">
           {rows.map((r) => (
             <tr key={r.id} className="transition-colors hover:bg-surface-bg">
-              <td className="px-4 py-3 text-brand-slate">{r.employee?.full_name ?? '—'}</td>
+              <td className="px-4 py-3">
+                <Link
+                  href={`/hr/employees/${r.employee_id}`}
+                  className="text-brand-slate hover:text-brand-gold hover:underline"
+                >
+                  {r.employee?.full_name ?? '—'}
+                </Link>
+              </td>
               <td className="px-4 py-3 text-text-muted">{LEAVE_TYPE_LABELS[r.leave_type]}</td>
               <td className="px-4 py-3 text-text-muted">{formatDate(r.start_date)}</td>
               <td className="px-4 py-3 text-text-muted">{formatDate(r.end_date)}</td>

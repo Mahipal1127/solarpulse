@@ -8,6 +8,7 @@ import {
   HR_DOCUMENTS_BUCKET,
   SIGNED_URL_TTL_SECONDS,
   SENSITIVE_DOCUMENT_TYPES,
+  MAX_UPLOAD_BYTES,
 } from '@/lib/hr/constants'
 import type { SessionUser } from '@/lib/auth/guards'
 import type {
@@ -16,6 +17,7 @@ import type {
   CreateInterviewInput,
   UpdateInterviewInput,
   CreateEmployeeInput,
+  OnboardEmployeeInput,
   UpdateEmployeeInput,
   ProcessExitInput,
   CreateEmployeeDocumentInput,
@@ -153,7 +155,7 @@ async function assertEmployeeInOrg(
 ): Promise<void> {
   const { data } = await supabase
     .from('employees')
-    .select('id, users!inner(organization_id)')
+    .select('id, users!employees_user_id_fkey!inner(organization_id)')
     .eq('id', employeeId)
     .maybeSingle()
   if (!data) throw new ServiceError('Employee not found in this organization', 400)
@@ -341,12 +343,14 @@ export async function hireEmployee(
     throw new ServiceError('Cannot onboard into a role with no department', 400)
   }
 
-  // Create the auth login. A temporary password is set and the email marked confirmed;
-  // the real onboarding flow would send a reset link. We never store this password.
-  const tempPassword = `Sp!${crypto.randomUUID()}`
+  // Create the auth login. HR assigns the password in the onboarding form and hands it
+  // to the employee; when none is supplied we generate one nobody ever sees, leaving the
+  // account reachable only through a password reset. Either way the value goes straight
+  // to Supabase auth — we never store it, and it never reaches the audit log below.
+  const password = input.password ?? `Sp!${crypto.randomUUID()}`
   const { data: created, error: authError } = await service.auth.admin.createUser({
     email: input.email,
-    password: tempPassword,
+    password,
     email_confirm: true,
     user_metadata: { full_name: input.full_name },
   })
@@ -411,6 +415,160 @@ export async function hireEmployee(
     }
     throw err
   }
+}
+
+/**
+ * The onboarding-wizard flow: everything hireEmployee does, plus a WhatsApp number, an optional
+ * profile photo, and the must_change_password flag — the provisioning half of the feature.
+ *
+ * TRANSACTION BOUNDARY. A Supabase auth user cannot be created inside a Postgres transaction, so
+ * "one transaction" is really "provision, and unwind the orphan if the DB half fails" — the same
+ * best-effort atomicity hireEmployee documents, and the guarantee the acceptance criterion names:
+ * a failed onboard leaves NO ghost login. The auth user is created first (cheapest to unwind), the
+ * users + employees rows next; any failure through the employees insert deletes both.
+ *
+ * The photo is uploaded AFTER the employee row exists (its storage path is '{employee_id}/...',
+ * which needs the id) and is BEST-EFFORT: a failed photo upload does not roll back a provisioned
+ * employee — the card simply renders an initials tile until HR adds one. must_change_password is
+ * left at its DB default (true) but set explicitly here so the intent is legible at the call site.
+ *
+ * The QR token and card IMAGE are deliberately NOT minted here — the route calls
+ * generateAndStoreCard after this returns. Two reasons: it keeps card rendering (which pulls in
+ * next/og) out of this service and breaks an import cycle, and a card that fails to render is
+ * independently regenerable, whereas an orphaned auth login is not. collectCardData mints the
+ * token lazily on first render, so nothing is lost.
+ */
+export async function onboardEmployee(
+  user: SessionUser,
+  input: OnboardEmployeeInput
+): Promise<Employee> {
+  assertHrLead(user)
+  const service = createSupabaseServiceClient()
+
+  const { data: role } = await service
+    .from('roles')
+    .select('id, organization_id, department_id')
+    .eq('id', input.role_id)
+    .eq('organization_id', user.organization_id)
+    .maybeSingle()
+  if (!role) throw new ServiceError('Role not found in this organization', 400)
+  if (!role.department_id) {
+    throw new ServiceError('Cannot onboard into a role with no department', 400)
+  }
+
+  // HR-assigned password, or a generated one nobody sees when HR left it blank. Never stored here;
+  // must_change_password below still forces a reset on first sign-in.
+  const password = input.password ?? `Sp!${crypto.randomUUID()}`
+  const { data: created, error: authError } = await service.auth.admin.createUser({
+    email: input.email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: input.full_name },
+  })
+  if (authError || !created?.user) {
+    throw new ServiceError(authError?.message ?? 'Could not create the login', 400)
+  }
+  const authId = created.user.id
+
+  try {
+    const { error: userError } = await service.from('users').insert({
+      id: authId,
+      organization_id: user.organization_id,
+      department_id: role.department_id,
+      role_id: input.role_id,
+      full_name: input.full_name,
+      email: input.email,
+      phone: input.phone ?? null,
+      is_active: true,
+    })
+    if (userError) throw new ServiceError(userError.message, 400)
+
+    const { data: employee, error: empError } = await service
+      .from('employees')
+      .insert({
+        user_id: authId,
+        designation: input.designation ?? null,
+        employee_code: input.employee_code ?? null,
+        date_joined: input.date_joined ?? null,
+        reporting_to: input.reporting_to ?? null,
+        phone: input.phone ?? null,
+        emergency_contact: input.emergency_contact ?? null,
+        employment_status: 'active',
+        whatsapp_number: input.whatsapp_number ?? null,
+        must_change_password: true,
+      })
+      .select()
+      .single()
+    if (empError) throw new ServiceError(empError.message, 400)
+
+    // Best-effort photo upload, now that the employee id (and its storage folder) exists.
+    let photoPath: string | null = null
+    if (input.profile_photo) {
+      photoPath = await uploadProfilePhoto(service, employee.id, input.profile_photo)
+      if (photoPath) {
+        await service
+          .from('employees')
+          .update({ profile_photo_path: photoPath })
+          .eq('id', employee.id)
+      }
+    }
+
+    await logAction({
+      organizationId: user.organization_id,
+      userId: user.id,
+      action: 'employee_onboarded',
+      entityType: 'employee',
+      entityId: employee.id,
+      metadata: {
+        new_user_id: authId,
+        role_id: input.role_id,
+        email: input.email,
+        has_photo: Boolean(photoPath),
+      },
+    })
+
+    return { ...(employee as Employee), profile_photo_path: photoPath }
+  } catch (err) {
+    // Unwind the orphan login — users row first (if the employees insert failed), then the auth
+    // user. Both best-effort; neither may mask the original error.
+    try {
+      await service.from('users').delete().eq('id', authId)
+    } catch {
+      /* best-effort cleanup */
+    }
+    try {
+      await service.auth.admin.deleteUser(authId)
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw err
+  }
+}
+
+/**
+ * Decodes a 'data:image/...;base64,...' URI and uploads it as the employee's profile photo,
+ * returning the storage path or null on any failure (best-effort — a missing photo never blocks
+ * onboarding). Enforces MAX_UPLOAD_BYTES on the DECODED size, since the schema only bounds the
+ * base64 string. Path is '{employee_id}/profile-{n}.{ext}', the same employee-id-first convention
+ * every HR object uses so the existing storage policies apply unchanged.
+ */
+async function uploadProfilePhoto(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  employeeId: string,
+  dataUri: string
+): Promise<string | null> {
+  const match = /^data:image\/(png|jpe?g|webp);base64,(.+)$/.exec(dataUri)
+  if (!match) return null
+  const ext = match[1] === 'jpeg' ? 'jpg' : match[1]
+  const bytes = Buffer.from(match[2], 'base64')
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) return null
+
+  const path = `${employeeId}/profile-${Date.now()}.${ext}`
+  const { error } = await service.storage
+    .from(HR_DOCUMENTS_BUCKET)
+    .upload(path, bytes, { contentType: `image/${match[1]}`, upsert: true })
+  if (error) return null
+  return path
 }
 
 export async function updateEmployee(
@@ -929,7 +1087,7 @@ export async function listRecentSalaryRecords(
 
   const { data, error } = await supabase
     .from('salary_records')
-    .select('*, employee:employees!salary_records_employee_id_fkey(users!inner(full_name))')
+    .select('*, employee:employees!salary_records_employee_id_fkey(users!employees_user_id_fkey!inner(full_name))')
     .order('effective_month', { ascending: false })
     .limit(limit)
 

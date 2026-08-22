@@ -12,6 +12,7 @@ import type {
   AttendanceSnapshot,
   SalesTrendPoint,
   ProjectPortfolio,
+  PipelineStage,
 } from '@/lib/departments/contracts'
 import type { PendingDataSource } from '@/lib/types'
 
@@ -30,6 +31,7 @@ interface Props {
   attendance: AttendanceSnapshot | null
   salesTrend: SalesTrendPoint[] | null
   projectPortfolio: ProjectPortfolio | null
+  pipeline: PipelineStage[] | null
   pendingSources: Record<string, PendingDataSource>
 }
 
@@ -72,6 +74,7 @@ export function AnalyticsTabs({
   attendance,
   salesTrend,
   projectPortfolio,
+  pipeline,
   pendingSources,
 }: Props) {
   const [tab, setTab] = useState<Tab>('Tasks')
@@ -239,22 +242,64 @@ export function AnalyticsTabs({
         )}
 
         {tab === 'Projects' && (
-          projectPortfolio ? (
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { label: 'Active',    value: projectPortfolio.active,    color: 'text-brand-slate',  bg: 'bg-brand-gold/10' },
-                { label: 'Pending',   value: projectPortfolio.pending,   color: 'text-status-warning',   bg: 'bg-status-warning/5' },
-                { label: 'Completed', value: projectPortfolio.completed, color: 'text-status-success', bg: 'bg-status-success/5' },
-              ].map(({ label, value, color, bg }) => (
-                <div key={label} className={`rounded-xl ${bg} px-5 py-6 text-center`}>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{label}</p>
-                  <p className={`mt-2 text-4xl font-bold ${color}`}>{value}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <AwaitingModule department={pendingSources.projects.awaitingDepartment} metric={pendingSources.projects.metric} />
-          )
+          <div className="space-y-5">
+            {/*
+              The company-wide pipeline funnel — the one view no single module holds.
+              Counts are live records in flight at each hand-off (Sales → Technical →
+              O&M → DISCOM), so the shape shows where work is piling up. Bars recede to
+              muted; the tallest stage carries the gold highlight as the one to read
+              first, per the locked chart pattern.
+            */}
+            {pipeline ? (
+              <ChartBox title="Company Pipeline — live records by stage">
+                <ResponsiveContainer width="100%" height={230}>
+                  <BarChart
+                    data={pipeline}
+                    layout="vertical"
+                    margin={{ top: 0, right: 24, bottom: 0, left: 20 }}
+                  >
+                    <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="stage" tick={{ fontSize: 11 }} width={92} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      formatter={(v, _n, item) => [`${v} in flight`, item?.payload?.department ?? '']}
+                    />
+                    <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+                      {pipeline.map((s, i) => {
+                        const maxCount = Math.max(...pipeline.map((p) => p.count), 0)
+                        const isPeak = s.count === maxCount && maxCount > 0
+                        return (
+                          <Cell
+                            key={`${s.stage}-${i}`}
+                            fill={isPeak ? 'var(--chart-bar-highlight)' : 'var(--chart-bar-muted)'}
+                          />
+                        )
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartBox>
+            ) : (
+              <AwaitingModule department={pendingSources.pipeline.awaitingDepartment} metric={pendingSources.pipeline.metric} />
+            )}
+
+            {projectPortfolio ? (
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { label: 'Active',    value: projectPortfolio.active,    color: 'text-brand-slate',  bg: 'bg-brand-gold/10' },
+                  { label: 'Pending',   value: projectPortfolio.pending,   color: 'text-status-warning',   bg: 'bg-status-warning/5' },
+                  { label: 'Completed', value: projectPortfolio.completed, color: 'text-status-success', bg: 'bg-status-success/5' },
+                ].map(({ label, value, color, bg }) => (
+                  <div key={label} className={`rounded-xl ${bg} px-5 py-6 text-center`}>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-text-muted">{label}</p>
+                    <p className={`mt-2 text-4xl font-bold ${color}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <AwaitingModule department={pendingSources.projects.awaitingDepartment} metric={pendingSources.projects.metric} />
+            )}
+          </div>
         )}
       </div>
     </div>

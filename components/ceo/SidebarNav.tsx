@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   FileText,
   Building2,
+  Users,
   Sparkles,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -40,6 +41,7 @@ const PRIMARY_NAV = [
   { href: '/approvals', label: 'Approvals', icon: ClipboardCheck },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/departments', label: 'Departments', icon: Building2 },
+  { href: '/employees', label: 'Employees', icon: Users },
 ]
 
 /*

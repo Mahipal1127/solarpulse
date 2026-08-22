@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG, isHrLead } from '@/lib/services/hr'
 import { getEmployeeRoster, getActiveUsers, getRoleOptions } from '@/lib/hr/dashboard'
@@ -40,6 +41,14 @@ export default async function EmployeesPage() {
           <CardHeader
             title="Onboard employee"
             subtitle="Creates their login, profile, and employee record together"
+            action={
+              <Link
+                href="/hr/onboarding/new"
+                className="rounded-lg border border-brand-gold px-3 py-1.5 text-xs font-medium text-brand-gold transition-colors hover:bg-brand-gold hover:text-white"
+              >
+                Full wizard + ID card →
+              </Link>
+            }
           />
           <div className="px-5 py-4">
             <OnboardEmployeeForm roles={roles} users={users} />
@@ -57,7 +66,12 @@ export default async function EmployeesPage() {
               <div key={e.employee_id} className="px-5 py-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-medium text-brand-slate">{e.full_name}</p>
+                    <Link
+                      href={`/hr/employees/${e.employee_id}`}
+                      className="font-medium text-brand-slate hover:text-brand-gold hover:underline"
+                    >
+                      {e.full_name}
+                    </Link>
                     <p className="mt-0.5 text-xs text-text-muted">
                       {e.designation ?? 'No designation'}
                       {e.department_name ? ` · ${e.department_name}` : ''}

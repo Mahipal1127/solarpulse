@@ -1337,6 +1337,16 @@ export const updateInterviewSchema = z
 export const createEmployeeSchema = z.object({
   full_name: z.string().trim().min(2, 'Name must be at least 2 characters').max(200),
   email: z.string().trim().email('Enter a valid email'),
+  /**
+   * The login password HR assigns and hands to the new employee. Email is the login id, so this is
+   * the other half of the credentials. OPTIONAL: when absent the service generates one nobody ever
+   * sees, which leaves the account reachable only through a password reset — the old behaviour, kept
+   * so existing callers do not change meaning. Deliberately NOT trimmed: trimming would silently
+   * hand over a password different from the one typed. 8-character floor matches
+   * changePasswordSchema and the login form. Passed straight to Supabase auth — never written to our
+   * tables, and never included in audit-log metadata.
+   */
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200).optional(),
   phone: optionalPhone,
   role_id: z.string().uuid('Select a role'),
   designation: z.string().trim().max(120).optional().nullable(),
@@ -1345,6 +1355,54 @@ export const createEmployeeSchema = z.object({
   reporting_to: z.string().uuid().optional().nullable(),
   emergency_contact: z.string().trim().max(120).optional().nullable(),
 })
+
+/**
+ * The onboarding wizard's payload. Extends the create-employee fields with a WhatsApp number for
+ * card sharing and an OPTIONAL profile photo sent inline as a data URI.
+ *
+ * WHY THE PHOTO IS INLINE. Every HR object lives at '{employee_id}/...', and the employee id does
+ * not exist until the row is inserted — so the browser cannot pre-upload to the final path the way
+ * the document flow does. The wizard therefore sends the photo bytes with the rest of the form and
+ * the server uploads them once the employee exists, inside the same rollback scope. Capped so a
+ * base64 string cannot bloat the request; the real image-size limit is enforced on the decoded
+ * bytes server-side against MAX_UPLOAD_BYTES.
+ */
+export const onboardEmployeeSchema = createEmployeeSchema.extend({
+  whatsapp_number: optionalPhone,
+  // A data URI: 'data:image/{png|jpeg|webp};base64,....'. Optional — a card renders an initials
+  // tile without one. ~7MB of base64 ≈ ~5MB decoded, comfortably above a headshot.
+  profile_photo: z
+    .string()
+    .regex(/^data:image\/(png|jpe?g|webp);base64,/, 'Photo must be a PNG, JPEG, or WebP image')
+    .max(7_000_000, 'Photo is too large')
+    .optional()
+    .nullable(),
+})
+
+/**
+ * First-login (or any) password change. Only the new password is needed: the caller is already
+ * authenticated (an active Supabase session), so we are not re-verifying the temporary one — the
+ * point of the forced change is to replace a password HR handed over, and the session cookie is
+ * the proof of identity. 8-char floor matches the login form's own rule.
+ */
+/**
+ * The scanned-token payload for /api/qr/resolve. The token is the opaque qr_tokens.token value the
+ * QR encodes — a long hex string. Bounded so a junk body is rejected before any DB lookup; the
+ * lookup itself treats any non-matching value as "not found".
+ */
+export const resolveTokenSchema = z.object({
+  token: z.string().trim().min(16, 'Invalid token').max(256),
+})
+
+export const changePasswordSchema = z
+  .object({
+    password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, {
+    message: 'Passwords do not match',
+    path: ['confirm'],
+  })
 
 /** employment_status is intentionally absent — see the module note above. */
 export const updateEmployeeSchema = z
@@ -1474,6 +1532,9 @@ export type UpdateCandidateInput = z.infer<typeof updateCandidateSchema>
 export type CreateInterviewInput = z.infer<typeof createInterviewSchema>
 export type UpdateInterviewInput = z.infer<typeof updateInterviewSchema>
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>
+export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
+export type ResolveTokenInput = z.infer<typeof resolveTokenSchema>
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>
 export type ProcessExitInput = z.infer<typeof processExitSchema>
 export type CreateEmployeeDocumentInput = z.infer<typeof createEmployeeDocumentSchema>

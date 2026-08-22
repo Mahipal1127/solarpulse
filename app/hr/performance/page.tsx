@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireDepartment } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG, isHrLead } from '@/lib/services/hr'
 import { getKpis, getEmployeeRoster } from '@/lib/hr/dashboard'
@@ -76,7 +77,14 @@ export default async function PerformancePage() {
               <tbody className="divide-y divide-border-subtle">
                 {kpis.map((k) => (
                   <tr key={k.id} className="transition-colors hover:bg-surface-bg">
-                    <td className="px-4 py-3 text-brand-slate">{k.employee?.full_name ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/hr/employees/${k.employee_id}`}
+                        className="text-brand-slate hover:text-brand-gold hover:underline"
+                      >
+                        {k.employee?.full_name ?? '—'}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-brand-slate">{k.kpi_description}</td>
                     <td className="px-4 py-3 text-text-muted">
                       {formatDate(k.period_start)} – {formatDate(k.period_end)}

@@ -7,6 +7,7 @@ import {
   getAttendanceSnapshot,
   getSalesTrend,
   getProjectPortfolio,
+  getPipelineFunnel,
   PENDING_SOURCES,
 } from '@/lib/departments/contracts'
 import { getCrossDepartmentMetrics } from '@/lib/ceo/metrics'
@@ -68,6 +69,7 @@ export default async function AnalyticsPage() {
     attendance,
     salesTrend,
     projects,
+    pipeline,
   ] = await Promise.all([
     supabase
       .from('tasks')
@@ -96,6 +98,7 @@ export default async function AnalyticsPage() {
     getAttendanceSnapshot(user.organization_id),
     getSalesTrend(user.organization_id),
     getProjectPortfolio(user.organization_id),
+    getPipelineFunnel(user.organization_id),
   ])
 
   type RawTask = {
@@ -315,6 +318,7 @@ export default async function AnalyticsPage() {
           attendance={attendance}
           salesTrend={salesTrend}
           projectPortfolio={projects}
+          pipeline={pipeline}
           pendingSources={PENDING_SOURCES}
         />
       </section>

@@ -1,14 +1,11 @@
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG } from '@/lib/services/hr'
 import { getEmployeeRoster, getAttendanceForDate } from '@/lib/hr/dashboard'
-import { Card, CardHeader, Badge, EmptyState } from '@/components/ui/primitives'
+import { Card, CardHeader, EmptyState } from '@/components/ui/primitives'
 import { MarkAttendanceForm } from '@/components/hr/MarkAttendanceForm'
-import {
-  ATTENDANCE_STATUS_LABELS,
-  ATTENDANCE_STATUS_STYLES,
-  formatDate,
-  formatDateTime,
-} from '@/lib/format'
+import { AttendanceTable } from '@/components/hr/AttendanceTable/AttendanceTable'
+import { formatDate } from '@/lib/format'
+import type { AttendanceStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,39 +60,18 @@ export default async function HrAttendancePage({
             description="Marked and self check-in rows for this date will show here."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border-subtle text-left text-xs uppercase tracking-wide text-text-muted">
-                  <th className="px-4 py-3 font-semibold">Employee</th>
-                  <th className="px-4 py-3 font-semibold">Status</th>
-                  <th className="px-4 py-3 font-semibold">Check in</th>
-                  <th className="px-4 py-3 font-semibold">Check out</th>
-                  <th className="px-4 py-3 font-semibold">Source</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {records.map((r) => (
-                  <tr key={r.id} className="transition-colors hover:bg-surface-bg">
-                    <td className="px-4 py-3 text-brand-slate">{r.employee?.full_name ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <Badge className={ATTENDANCE_STATUS_STYLES[r.status]}>
-                        {ATTENDANCE_STATUS_LABELS[r.status]}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {r.check_in ? formatDateTime(r.check_in) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {r.check_out ? formatDateTime(r.check_out) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-text-muted">
-                      {r.marked_by ? 'HR marked' : 'Self'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="px-2 py-3">
+            <AttendanceTable
+              rows={records.map((r) => ({
+                id: r.id,
+                employeeId: r.employee_id,
+                fullName: r.employee?.full_name ?? '—',
+                status: r.status as AttendanceStatus,
+                checkIn: r.check_in,
+                checkOut: r.check_out,
+                marked: Boolean(r.marked_by),
+              }))}
+            />
           </div>
         )}
       </Card>

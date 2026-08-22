@@ -37,12 +37,18 @@ export interface HrEmployeeOption {
  */
 export async function getEmployeeRoster(): Promise<HrEmployeeOption[]> {
   const supabase = await createSupabaseServerClient()
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('employees')
     .select(
-      'id, user_id, designation, employment_status, users!inner(full_name, is_active, departments(name))'
+      'id, user_id, designation, employment_status, users!employees_user_id_fkey!inner(full_name, is_active, departments(name))'
     )
     .order('employment_status', { ascending: true })
+
+  // A rejected query and an RLS-empty result both arrive here as no rows, so the page
+  // renders "0 people" either way and the real cause stays invisible. employees has two
+  // FKs to users (user_id and reporting_to), so the embed above MUST name the constraint
+  // — an unhinted users(...) is ambiguous and PostgREST refuses the whole select.
+  if (error) console.error('[hr] employee roster query failed', error.message, error.details ?? '')
 
   return (data ?? []).map((row) => {
     const u = row.users as unknown as {
@@ -84,17 +90,29 @@ export interface RoleOption {
   department_name: string | null
 }
 
+/**
+ * Roles that must never be offered when onboarding a new hire. 'HR Executive' is the deliberately
+ * limited operational HR tier (0015); the product decision is that HR has ONE full role, so an HR
+ * hire is always an 'HR Manager'. Removing Executive from the picker means no one can be onboarded
+ * into the crippled role in the first place — existing Executives are migrated separately via
+ * supabase/seed_promote_hr_to_manager.sql. The role row itself is kept (RLS and history reference
+ * it); it is simply not selectable.
+ */
+const RETIRED_ONBOARDING_ROLES = ['HR Executive']
+
 export async function getRoleOptions(): Promise<RoleOption[]> {
   const supabase = await createSupabaseServerClient()
   const { data } = await supabase
     .from('roles')
     .select('id, name, departments(name)')
     .order('name', { ascending: true })
-  return (data ?? []).map((r) => ({
-    id: r.id as string,
-    name: r.name as string,
-    department_name: (r.departments as unknown as { name: string } | null)?.name ?? null,
-  }))
+  return (data ?? [])
+    .filter((r) => !RETIRED_ONBOARDING_ROLES.includes(r.name as string))
+    .map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      department_name: (r.departments as unknown as { name: string } | null)?.name ?? null,
+    }))
 }
 
 export interface CandidateWithInterviews extends Candidate {
@@ -120,7 +138,7 @@ export async function getLeaveQueue(): Promise<LeaveWithEmployee[]> {
   const supabase = await createSupabaseServerClient()
   const { data } = await supabase
     .from('leave_requests')
-    .select('*, employee:employees!leave_requests_employee_id_fkey(users!inner(full_name))')
+    .select('*, employee:employees!leave_requests_employee_id_fkey(users!employees_user_id_fkey!inner(full_name))')
     .order('created_at', { ascending: false })
 
   return (data ?? []).map((row) => {
@@ -141,7 +159,7 @@ export async function getAttendanceForDate(date: string): Promise<AttendanceWith
   const supabase = await createSupabaseServerClient()
   const { data } = await supabase
     .from('attendance_records')
-    .select('*, employee:employees!attendance_records_employee_id_fkey(users!inner(full_name))')
+    .select('*, employee:employees!attendance_records_employee_id_fkey(users!employees_user_id_fkey!inner(full_name))')
     .eq('date', date)
     .order('created_at', { ascending: false })
 
@@ -163,7 +181,7 @@ export async function getKpis(): Promise<KpiWithEmployee[]> {
   const supabase = await createSupabaseServerClient()
   const { data } = await supabase
     .from('performance_kpis')
-    .select('*, employee:employees!performance_kpis_employee_id_fkey(users!inner(full_name))')
+    .select('*, employee:employees!performance_kpis_employee_id_fkey(users!employees_user_id_fkey!inner(full_name))')
     .order('period_end', { ascending: false })
 
   return (data ?? []).map((row) => {

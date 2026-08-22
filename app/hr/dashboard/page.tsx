@@ -132,9 +132,12 @@ export default async function HrDashboardPage() {
               {pendingLeave.map((l) => (
                 <li key={l.id} className="flex items-center justify-between gap-3 px-5 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-brand-slate">
+                    <Link
+                      href={`/hr/employees/${l.employee_id}`}
+                      className="block truncate text-sm font-medium text-brand-slate hover:text-brand-gold hover:underline"
+                    >
                       {l.employee?.full_name ?? '—'}
-                    </p>
+                    </Link>
                     <p className="text-xs text-text-muted">
                       {LEAVE_TYPE_LABELS[l.leave_type]} · {leaveDayCount(l.start_date, l.end_date)} day
                       {leaveDayCount(l.start_date, l.end_date) === 1 ? '' : 's'} · from{' '}
