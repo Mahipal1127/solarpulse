@@ -16,6 +16,10 @@ import { SIDEBAR_SHELL } from '@/components/shared/chrome'
  * (like O&M), its own staff plus the CEO read-only. Store has no org-wide exception the way
  * Technical's IT Support does, so everyone else is redirected at the shell. RLS still decides
  * which rows come back.
+ *
+ * The module's navigation lives in StoreSidebarNav — all ten surfaces, listed there and
+ * nowhere else. Being in this layout, it renders once per module and is preserved across
+ * navigation between the module's own pages.
  */
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   const user = await requireDepartment(STORE_DEPARTMENT_SLUG)

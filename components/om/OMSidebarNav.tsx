@@ -8,6 +8,7 @@ import {
   LifeBuoy,
   CalendarClock,
   ListChecks,
+  ScrollText,
   ArrowLeft,
 } from 'lucide-react'
 import {
@@ -23,6 +24,9 @@ const NAV = [
   { href: '/om/service', label: 'Service', icon: LifeBuoy },
   { href: '/om/amc', label: 'AMC', icon: CalendarClock },
   { href: '/om/my-tasks', label: 'My Tasks', icon: ListChecks },
+  // Beside My Tasks: both are the employee's own work rather than the department's
+  // queues. Not the header's "Report" button, which raises an IT support ticket.
+  { href: '/om/my-reports', label: 'My Reports', icon: ScrollText },
 ]
 
 export function OMSidebarNav({ isCeo }: { isCeo: boolean }) {

@@ -10,6 +10,7 @@ import {
   PackageCheck,
   Undo2,
   ListChecks,
+  ScrollText,
   ArrowLeft,
 } from 'lucide-react'
 import {
@@ -27,6 +28,10 @@ const NAV = [
   { href: '/distribution/dispatches', label: 'Dispatches', icon: Truck },
   { href: '/distribution/returns', label: 'Returns', icon: Undo2 },
   { href: '/distribution/my-tasks', label: 'My Tasks', icon: ListChecks },
+  // Beside My Tasks: both are the employee's own work rather than the department's
+  // queues. Deliberately outside APPROVER_NAV below — a Finance visitor files their
+  // periodic report in their own module, not this one.
+  { href: '/distribution/my-reports', label: 'My Reports', icon: ScrollText },
 ]
 
 /** The only thing a Finance visitor comes here to do. */

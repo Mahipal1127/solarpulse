@@ -29,7 +29,9 @@ import { SIDEBAR_SHELL } from '@/components/shared/chrome'
  *
  * A visitor is bounded on the way in and on the way down, the same three ways
  * Distribution bounds its Finance approvers:
- *   * the sidebar offers them IT Support and nothing else;
+ *   * the sidebar offers them IT Support and nothing else — TechnicalSidebarNav
+ *     handles that itself from the visitorOnly flag below, which is why there is no
+ *     visitor branch around the nav here;
  *   * every other page re-guards to Technical, so a visitor typing
  *     /technical/surveys is redirected rather than shown an empty table;
  *   * RLS returns them only the tickets they raised themselves, so even if both of

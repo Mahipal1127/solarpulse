@@ -91,14 +91,38 @@ export interface RoleOption {
 }
 
 /**
- * Roles that must never be offered when onboarding a new hire. 'HR Executive' is the deliberately
- * limited operational HR tier (0015); the product decision is that HR has ONE full role, so an HR
- * hire is always an 'HR Manager'. Removing Executive from the picker means no one can be onboarded
- * into the crippled role in the first place — existing Executives are migrated separately via
- * supabase/seed_promote_hr_to_manager.sql. The role row itself is kept (RLS and history reference
- * it); it is simply not selectable.
+ * Roles that must never be offered when onboarding a new hire — the departments that run on ONE
+ * role instead of the seeded Manager/Executive pair. Removing the Executive from the picker means
+ * no one can be onboarded into the lesser role in the first place; existing Executives are migrated
+ * separately (supabase/seed_promote_hr_to_manager.sql for HR,
+ * supabase/seed_promote_departments_to_manager.sql for the other five). The role rows themselves are
+ * KEPT — RLS policies and history reference them, and the lead tier is matched on the *name*
+ * '<Department> Manager' — they are simply not selectable.
+ *
+ * HR came first, for a different reason than the rest: its Executive tier was deliberately barred
+ * from payroll and performance (0015), so an HR Executive could not do the job. For DISCOM,
+ * Marketing, Sales, Store and Technical the Executive tier is not crippled but *scoped* — own rows
+ * only, no approve, no export. Retiring it therefore widens what an ordinary member sees to the
+ * whole department. That is the intended trade for a small team, but it IS a permission change and
+ * not merely a cosmetic one, so do not extend this list further without deciding that again.
+ *
+ * NOT retired, deliberately: Finance, Distribution, O&M, Accounts and Tender keep both tiers.
+ * Finance especially — its Executive is walled off from the sensitive money surfaces the same way
+ * HR's was from payroll, and there the two tiers are doing real work.
+ *
+ * Marketing's entry is the long-form 'Marketing & Training Executive', not 'Marketing Executive':
+ * 0002 names every auto-seeded role '<dept.name> Executive' and that department's name is
+ * 'Marketing & Training'. Its lead, seeded by 0014, is the short 'Marketing Manager'. Getting this
+ * string wrong fails silently — the role simply stays in the dropdown.
  */
-const RETIRED_ONBOARDING_ROLES = ['HR Executive']
+const RETIRED_ONBOARDING_ROLES = [
+  'HR Executive',
+  'DISCOM Executive',
+  'Marketing & Training Executive',
+  'Sales Executive',
+  'Store Executive',
+  'Technical Executive',
+]
 
 export async function getRoleOptions(): Promise<RoleOption[]> {
   const supabase = await createSupabaseServerClient()

@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Instagram audit collector (tools/instagram-audit) — a LOCAL operator tool, never deployed.
+# .profile/ is Chromium's own profile directory and holds a live logged-in Instagram
+# session. Committing or sharing it would hand over access to the account as surely as
+# handing over the password, so it is ignored here and must stay that way.
+/tools/instagram-audit/.profile/
+/tools/instagram-audit/node_modules/
+# Collected payloads written by --out / --dry-run. Real post data; no reason to commit it.
+/tools/instagram-audit/*-payload.json

@@ -3,7 +3,11 @@ import 'server-only'
 import Link from 'next/link'
 import { requireRole } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { Card, CardHeader, EmptyState, ProgressBar } from '@/components/ui/primitives'
+import { listSubmittedReports, listReportAuthors } from '@/lib/services/employee-reports'
+import { REPORT_PERIOD_LABELS } from '@/lib/reports/constants'
+import { Card, CardHeader, EmptyState, ProgressBar, Badge } from '@/components/ui/primitives'
+import { EmployeeReportFilters } from '@/components/ceo/EmployeeReportFilters'
+import { ReportAttachmentButton } from '@/components/ceo/ReportAttachmentButton'
 import { SEGMENT_TRACK, segmentClass } from '@/components/shared/chrome'
 import { formatDate, formatDateTime, STATUS_LABELS, STATUS_STYLES } from '@/lib/format'
 import type { TaskStatus } from '@/lib/types'
@@ -11,14 +15,15 @@ import type { TaskStatus } from '@/lib/types'
 export const dynamic = 'force-dynamic'
 
 /**
- * What the organisation reports upward: department rollups, and what individual
- * people have actually submitted.
+ * What the organisation reports upward: department rollups, what individual people have
+ * logged against their tasks, and the periodic reports employees submit about their own
+ * work.
  *
  * This replaced "AI Assistant" in the nav. The assistant moved onto the dashboard,
  * where the numbers it discusses are visible; this slot went to the thing a CEO
  * opens a nav entry for — reading what came in.
  *
- * BOTH TABS SHOW SUBMITTED DATA, NOT DERIVED DATA
+ * ALL THREE TABS SHOW SUBMITTED DATA, NOT DERIVED DATA
  * The department tab reads `department_reports`, which each department writes for
  * itself (policy `department_manage_own_reports`; the CEO gets read-only access via
  * `ceo_view_department_reports`).
@@ -28,12 +33,20 @@ export const dynamic = 'force-dynamic'
  * which is exactly why the CEO's task panel cannot write them. So this tab is a
  * genuine record of what people reported, not a management guess restated as fact.
  *
- * There is no separate per-employee report table yet. When one is wanted, it needs a
- * migration and its own RLS policy; deriving a fake one here would have looked like
- * a feature while being a rollup nobody submitted.
+ * The employees tab reads `employee_reports` (0019) through listSubmittedReports, which
+ * returns SUBMITTED rows only — a draft is the author's private working copy and the RLS
+ * policy hides it from the CEO entirely. Nothing on this page can edit any of the three:
+ * the CEO has no write policy on employee_reports at all.
+ *
+ * The three answer different questions and none subsumes another: a department rollup is
+ * the team's number, a task update is one moment on one task, and an employee report is a
+ * person's own account of their week.
  */
 
-type Tab = 'departments' | 'people'
+type Tab = 'departments' | 'people' | 'employees'
+
+/** Just enough of a department to fill the filter — the page never needs the rest. */
+type DepartmentOption = { id: string; name: string }
 
 type ReportRow = {
   id: string
@@ -57,9 +70,16 @@ type UpdateRow = {
 }
 
 export default async function ReportsPage(props: PageProps<'/reports'>) {
-  await requireRole('CEO')
+  const user = await requireRole('CEO')
   const searchParams = await props.searchParams
-  const tab: Tab = asString(searchParams.tab) === 'people' ? 'people' : 'departments'
+  const tabParam = asString(searchParams.tab)
+  const tab: Tab =
+    tabParam === 'people' ? 'people' : tabParam === 'employees' ? 'employees' : 'departments'
+
+  // Empty string and absent mean the same thing here — "no filter" — so both collapse to
+  // null before they reach the query, which treats null as "do not add this clause".
+  const departmentFilter = asString(searchParams.department) || null
+  const employeeFilter = asString(searchParams.employee) || null
 
   const supabase = await createSupabaseServerClient()
 
@@ -88,6 +108,32 @@ export default async function ReportsPage(props: PageProps<'/reports'>) {
   const reports = (reportData ?? []) as unknown as ReportRow[]
   const updates = (updateData ?? []) as unknown as UpdateRow[]
 
+  /*
+   * The employees tab is the one exception to the eager fetch above, and only reads when
+   * it is actually open. Its query depends on the department/employee params, so a
+   * prefetch made while the CEO was on another tab would fetch the wrong slice and be
+   * thrown away the moment a filter changed — there is nothing to keep warm.
+   */
+  let employeeReports: Awaited<ReturnType<typeof listSubmittedReports>> = []
+  let reportAuthors: Awaited<ReturnType<typeof listReportAuthors>> = []
+  let departments: DepartmentOption[] = []
+
+  if (tab === 'employees') {
+    const [submitted, authors, { data: departmentData }] = await Promise.all([
+      listSubmittedReports(user, { departmentId: departmentFilter, userId: employeeFilter }),
+      listReportAuthors(user),
+      supabase
+        .from('departments')
+        .select('id, name')
+        .eq('organization_id', user.organization_id)
+        .order('name'),
+    ])
+
+    employeeReports = submitted
+    reportAuthors = authors
+    departments = (departmentData ?? []) as DepartmentOption[]
+  }
+
   // Group the person-level updates by author, preserving the newest-first order the
   // query already established.
   const byPerson = new Map<
@@ -107,6 +153,31 @@ export default async function ReportsPage(props: PageProps<'/reports'>) {
     byPerson.get(name)!.updates.push(update)
   }
   const people = [...byPerson.values()]
+
+  /*
+   * Employee reports grouped under their author, keyed on user_id rather than on the
+   * name — two people can share a name, and merging their reports into one card would
+   * misattribute someone's account of their own work. The query's newest-submission-first
+   * order is preserved inside each group.
+   */
+  const byAuthor = new Map<
+    string,
+    { id: string; name: string; department: string | null; reports: typeof employeeReports }
+  >()
+  for (const report of employeeReports) {
+    const existing = byAuthor.get(report.user_id)
+    if (existing) {
+      existing.reports.push(report)
+      continue
+    }
+    byAuthor.set(report.user_id, {
+      id: report.user_id,
+      name: report.users?.full_name ?? 'Former employee',
+      department: report.users?.departments?.name ?? null,
+      reports: [report],
+    })
+  }
+  const authored = [...byAuthor.values()]
 
   return (
     <div className="p-6 sm:p-8">
@@ -132,6 +203,13 @@ export default async function ReportsPage(props: PageProps<'/reports'>) {
           className={segmentClass(tab === 'people')}
         >
           By person
+        </Link>
+        <Link
+          href="/reports?tab=employees"
+          aria-current={tab === 'employees' ? 'page' : undefined}
+          className={segmentClass(tab === 'employees')}
+        >
+          Employee reports
         </Link>
       </div>
 
@@ -190,70 +268,161 @@ export default async function ReportsPage(props: PageProps<'/reports'>) {
             })}
           </div>
         )
-      ) : people.length === 0 ? (
-        <Card>
-          <EmptyState
-            title="No submissions yet"
-            description="Progress updates people post on their own tasks appear here, newest first."
-          />
-        </Card>
+      ) : tab === 'people' ? (
+        people.length === 0 ? (
+          <Card>
+            <EmptyState
+              title="No submissions yet"
+              description="Progress updates people post on their own tasks appear here, newest first."
+            />
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {people.map((person) => (
+              <Card key={person.name}>
+                <CardHeader
+                  title={person.name}
+                  subtitle={[person.department, `${person.updates.length} update${person.updates.length === 1 ? '' : 's'}`]
+                    .filter(Boolean)
+                    .join(' · ')}
+                />
+                <ol className="divide-y divide-border-subtle">
+                  {person.updates.slice(0, 8).map((update) => (
+                    <li key={update.id} className="px-5 py-3.5">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        {update.tasks ? (
+                          <Link
+                            href={`/tasks/${update.tasks.id}`}
+                            className="text-sm font-medium text-brand-slate hover:text-brand-gold"
+                          >
+                            {update.tasks.title}
+                          </Link>
+                        ) : (
+                          <span className="text-sm font-medium text-text-muted">
+                            Task no longer available
+                          </span>
+                        )}
+                        <span className="shrink-0 text-xs text-text-muted">
+                          {formatDateTime(update.created_at)}
+                        </span>
+                      </div>
+
+                      {update.note && (
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-text-muted">
+                          {update.note}
+                        </p>
+                      )}
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {update.status && (
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_STYLES[update.status]}`}
+                          >
+                            {STATUS_LABELS[update.status]}
+                          </span>
+                        )}
+                        {update.progress_percent !== null && (
+                          <span className="text-xs text-text-muted">
+                            reported {update.progress_percent}% complete
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </Card>
+            ))}
+          </div>
+        )
       ) : (
-        <div className="space-y-4">
-          {people.map((person) => (
-            <Card key={person.name}>
-              <CardHeader
-                title={person.name}
-                subtitle={[person.department, `${person.updates.length} update${person.updates.length === 1 ? '' : 's'}`]
-                  .filter(Boolean)
-                  .join(' · ')}
+        <>
+          {/*
+            The filters render above the results and outside the empty check on purpose:
+            an empty list is usually the answer to a filter, and hiding the controls that
+            produced it would leave no way back except the browser's back button.
+          */}
+          <EmployeeReportFilters departments={departments} authors={reportAuthors} />
+
+          {authored.length === 0 ? (
+            <Card>
+              <EmptyState
+                title={
+                  departmentFilter || employeeFilter
+                    ? 'No reports match this filter'
+                    : 'No employee reports yet'
+                }
+                description={
+                  departmentFilter || employeeFilter
+                    ? 'Nobody in this selection has submitted a report yet. Clear the filters to see everything that has come in.'
+                    : 'Employees submit daily, weekly or monthly reports of their own work from the My Reports tab in their department. Submitted reports appear here — drafts stay private to their author.'
+                }
               />
-              <ol className="divide-y divide-border-subtle">
-                {person.updates.slice(0, 8).map((update) => (
-                  <li key={update.id} className="px-5 py-3.5">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      {update.tasks ? (
-                        <Link
-                          href={`/tasks/${update.tasks.id}`}
-                          className="text-sm font-medium text-brand-slate hover:text-brand-gold"
-                        >
-                          {update.tasks.title}
-                        </Link>
-                      ) : (
-                        <span className="text-sm font-medium text-text-muted">
-                          Task no longer available
-                        </span>
-                      )}
-                      <span className="shrink-0 text-xs text-text-muted">
-                        {formatDateTime(update.created_at)}
-                      </span>
-                    </div>
-
-                    {update.note && (
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-text-muted">
-                        {update.note}
-                      </p>
-                    )}
-
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {update.status && (
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_STYLES[update.status]}`}
-                        >
-                          {STATUS_LABELS[update.status]}
-                        </span>
-                      )}
-                      {update.progress_percent !== null && (
-                        <span className="text-xs text-text-muted">
-                          reported {update.progress_percent}% complete
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ol>
             </Card>
-          ))}
-        </div>
+          ) : (
+            <div className="space-y-4">
+              {authored.map((person) => (
+                <Card key={person.id}>
+                  <CardHeader
+                    title={person.name}
+                    subtitle={[
+                      person.department ?? 'No department',
+                      `${person.reports.length} report${person.reports.length === 1 ? '' : 's'}`,
+                    ].join(' · ')}
+                  />
+                  <ol className="divide-y divide-border-subtle">
+                    {person.reports.map((report) => (
+                      <li key={report.id} className="space-y-2.5 px-5 py-4">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium text-brand-slate">
+                              {REPORT_PERIOD_LABELS[report.period]} ·{' '}
+                              {report.period_start === report.period_end
+                                ? formatDate(report.period_start)
+                                : `${formatDate(report.period_start)} – ${formatDate(report.period_end)}`}
+                            </span>
+                            {/*
+                              Provenance, shown rather than hidden: the CEO is reading this
+                              as the person's own account, so a passage that started as a
+                              machine draft says so. The employee still edited and submitted
+                              it under their own name.
+                            */}
+                            {report.ai_generated && (
+                              <Badge className="bg-brand-gold/10 text-brand-slate ring-brand-gold/30">
+                                AI draft
+                              </Badge>
+                            )}
+                          </div>
+                          {report.submitted_at && (
+                            <span className="shrink-0 text-xs text-text-muted">
+                              Submitted {formatDateTime(report.submitted_at)}
+                            </span>
+                          )}
+                        </div>
+
+                        {report.content ? (
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-text-muted">
+                            {report.content}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-text-muted/60">
+                            No written summary — this report was filed as an attachment.
+                          </p>
+                        )}
+
+                        {report.attachment_path && (
+                          <ReportAttachmentButton
+                            reportId={report.id}
+                            fileName={report.attachment_name}
+                          />
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

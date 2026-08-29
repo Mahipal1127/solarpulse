@@ -1,0 +1,14 @@
+{
+  "name": "instagram-audit-collector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local operator tool: opens a real browser, you log into Instagram yourself, and it reads your own connected profile into the ERP for auditing.",
+  "scripts": {
+    "collect": "node collect.mjs",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.58.0"
+  }
+}

@@ -2,7 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, ClipboardList, FileText, Gavel, ArrowLeft } from 'lucide-react'
+import {
+  LayoutDashboard,
+  ClipboardList,
+  FileText,
+  Gavel,
+  ScrollText,
+  ArrowLeft,
+} from 'lucide-react'
 import {
   SIDEBAR_BODY,
   SIDEBAR_FOOTER_GROUP,
@@ -20,6 +27,10 @@ import {
 const NAV = [
   { href: '/overview', label: 'Overview', icon: LayoutDashboard },
   { href: '/my-tasks', label: 'My Tasks', icon: ClipboardList },
+  // Beside My Tasks: both are one person's own work rather than the department's
+  // queues. No /tender prefix — this module lives in a route group, exactly as the
+  // /my-tasks href directly above does.
+  { href: '/my-reports', label: 'My Reports', icon: ScrollText },
   { href: '/tenders', label: 'Tenders', icon: FileText },
   { href: '/bids', label: 'Bids', icon: Gavel },
 ]

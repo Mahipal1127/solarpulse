@@ -15,6 +15,7 @@ import {
   AlertCircle,
   BarChart3,
   ListChecks,
+  ScrollText,
   ArrowLeft,
 } from 'lucide-react'
 import {
@@ -45,7 +46,16 @@ const NAV_BASE = [
 
 const NAV_SENSITIVE = [{ href: '/finance/reports', label: 'Reports', icon: BarChart3 }]
 
-const NAV_TAIL = [{ href: '/finance/my-tasks', label: 'My Tasks', icon: ListChecks }]
+/**
+ * Always last, and always shown — every Finance employee files their own periodic
+ * report, the lead included. Beside My Tasks because both are the person's own work
+ * rather than the department's queues. Not the Reports entry above, which is the
+ * lead-only P&L / Balance Sheet.
+ */
+const NAV_TAIL = [
+  { href: '/finance/my-tasks', label: 'My Tasks', icon: ListChecks },
+  { href: '/finance/my-reports', label: 'My Reports', icon: ScrollText },
+]
 
 export function FinanceSidebarNav({ isCeo, isLead }: { isCeo: boolean; isLead: boolean }) {
   const pathname = usePathname()

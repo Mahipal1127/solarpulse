@@ -1520,3 +1520,42 @@ export interface FacilityMaintenanceLog {
   resolved_at: string | null
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Employee report submissions (0019)
+// ---------------------------------------------------------------------------
+
+/**
+ * How much work a report covers. Stored as plain text (0015/0016/0017 convention),
+ * so adding 'quarterly' later is an app change rather than a column rewrite.
+ */
+export type ReportPeriod = 'daily' | 'weekly' | 'monthly'
+
+/**
+ * A draft is the author's private working copy — the CEO's policies hide it until it
+ * is submitted, so an unfinished thought is never read as a report.
+ */
+export type ReportStatus = 'draft' | 'submitted'
+
+export interface EmployeeReport {
+  id: string
+  organization_id: string
+  user_id: string
+  /** Where the author was when they filed — denormalised so past reports do not
+   *  follow them to a new team. Null for the CEO, who has no department. */
+  department_id: string | null
+  period: ReportPeriod
+  /** Inclusive on both ends; a daily report has period_start === period_end. */
+  period_start: string
+  period_end: string
+  /** Null only when an attachment carries the report instead. */
+  content: string | null
+  attachment_path: string | null
+  attachment_name: string | null
+  /** Provenance, not a quality mark: the text started as an AI draft. */
+  ai_generated: boolean
+  status: ReportStatus
+  submitted_at: string | null
+  created_at: string
+  updated_at: string
+}

@@ -1933,3 +1933,243 @@ export type UpdateDealerInput = z.infer<typeof updateDealerSchema>
 export type CreateMarketSurveyNoteInput = z.infer<typeof createMarketSurveyNoteSchema>
 export type CreateFacilityLogInput = z.infer<typeof createFacilityLogSchema>
 export type UpdateFacilityLogInput = z.infer<typeof updateFacilityLogSchema>
+
+// ---------------------------------------------------------------------------
+// Employee report submissions (0019)
+// ---------------------------------------------------------------------------
+
+export const reportPeriod = z.enum(['daily', 'weekly', 'monthly'])
+
+/**
+ * What the client may send when creating a report.
+ *
+ * NOT accepted here, on purpose — the service layer sets all of these from the session,
+ * so a crafted request cannot file a report as someone else, into another department, or
+ * pre-submitted: user_id, organization_id, department_id, status, submitted_at,
+ * period_start and period_end (both derived from `period`), and ai_generated (set only by
+ * the generate route, so the flag records what actually happened rather than what the
+ * client claimed).
+ *
+ * The at-least-one-of rule is enforced in three places, deliberately: here for a clear
+ * field-level message, in the service layer for any non-form caller, and as a CHECK
+ * constraint in 0019 so no path at all can write an empty report.
+ */
+export const createEmployeeReportSchema = z
+  .object({
+    period: reportPeriod.default('daily'),
+    /** Free text, or null when an attachment carries the report instead. */
+    content: z.string().trim().max(20000).optional().nullable(),
+    /** Storage object path, uploaded by the browser before this call. */
+    attachment_path: z.string().trim().max(500).optional().nullable(),
+    attachment_name: z.string().trim().max(255).optional().nullable(),
+    /**
+     * Save as a draft (the default) or submit outright. A requested transition, not a
+     * writable status: the server decides what submitting means — stamping submitted_at
+     * and refusing an empty report.
+     */
+    submit: z.boolean().optional(),
+    /**
+     * Whether the text started as an AI draft. Self-declared, because only the browser
+     * knows whether Generate was clicked — the server cannot tell edited AI prose from
+     * hand-written prose. Safe to trust: it is a provenance label the CEO sees, it grants
+     * nothing, and a wrong value in either direction costs no permission. Never let it
+     * decide anything but display.
+     */
+    ai_generated: z.boolean().optional(),
+  })
+  .refine((v) => Boolean(v.content) || Boolean(v.attachment_path), {
+    message: 'Write something or attach a file — a report cannot be empty',
+    path: ['content'],
+  })
+
+/**
+ * Editing a draft. `submit` is a requested state transition rather than a writable
+ * status field: the client asks to submit and the server decides what that means —
+ * stamping submitted_at, refusing an empty report, refusing one already submitted.
+ */
+export const updateEmployeeReportSchema = z
+  .object({
+    content: z.string().trim().max(20000).optional().nullable(),
+    attachment_path: z.string().trim().max(500).optional().nullable(),
+    attachment_name: z.string().trim().max(255).optional().nullable(),
+    submit: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'Nothing to update' })
+
+/** The AI draft request. Period only — every figure is computed server-side from it. */
+export const generateEmployeeReportSchema = z.object({
+  period: reportPeriod.default('daily'),
+})
+
+export type CreateEmployeeReportInput = z.infer<typeof createEmployeeReportSchema>
+export type UpdateEmployeeReportInput = z.infer<typeof updateEmployeeReportSchema>
+export type GenerateEmployeeReportInput = z.infer<typeof generateEmployeeReportSchema>
+
+// Instagram audit (0020) -----------------------------------------------------
+
+/**
+ * Connecting a handle. The username is the ONLY thing a client may send — no password, no
+ * session cookie, no Instagram token, because the operator logs in interactively in their
+ * own browser and there is nothing of that kind to transmit. The absence of those fields
+ * here is the same structural guarantee 0020 makes by having no column for them.
+ *
+ * A pasted profile URL is accepted and reduced to the handle by normaliseUsername(), which
+ * is why the max length allows for one. The real format check lives there, next to the
+ * lowercasing, rather than being half-enforced in two places.
+ */
+export const connectInstagramAccountSchema = z.object({
+  username: z.string().trim().min(1, 'Enter the Instagram handle').max(200),
+})
+
+/**
+ * Requesting an audit. The window is a choice among fixed spans rather than a free number:
+ * every value here is one a marketing team actually reasons in, and it stops a caller
+ * asking for a 3-day window that would produce confident nonsense out of two posts. null
+ * means every stored post.
+ */
+export const generateInstagramAuditSchema = z.object({
+  account_id: z.string().uuid(),
+  days: z
+    .union([z.literal(30), z.literal(90), z.literal(180), z.literal(365), z.null()])
+    .default(90),
+})
+
+/**
+ * One post as the local tool reports it.
+ *
+ * Everything except the shortcode is nullish, and that is the contract: the tool sends null
+ * for anything it could not read, the service layer stores null, and metrics.ts treats null
+ * as "could not be read" rather than zero. A tool that guessed at a hidden like count would
+ * break that chain at its first link.
+ *
+ * Counters are capped two orders of magnitude above any real post, which catches a parse
+ * that turned "1.2M" into 12000000000 instead of storing it as fact.
+ */
+const instagramSyncPostSchema = z.object({
+  shortcode: z.string().trim().min(1).max(64),
+  media_type: z.string().trim().max(32).nullish(),
+  carousel_count: z.number().int().min(0).max(50).nullish(),
+  caption: z.string().max(5000).nullish(),
+  like_count: z.number().int().min(0).max(1_000_000_000).nullish(),
+  comment_count: z.number().int().min(0).max(1_000_000_000).nullish(),
+  view_count: z.number().int().min(0).max(1_000_000_000).nullish(),
+  /** ISO 8601. Anything unparseable is reduced to null by coerceTimestamp(). */
+  posted_at: z.string().trim().max(64).nullish(),
+})
+
+/**
+ * The whole sync payload, POSTed by tools/instagram-audit with a single-use token.
+ *
+ * `partial` is the tool telling on itself: it sets the flag when it knows it collected less
+ * than it tried to — a grid that stopped loading, a hidden counter — which becomes
+ * sync_status = 'partial' and is shown in the UI. Honest incompleteness is a supported
+ * outcome; silent incompleteness is what this field exists to prevent.
+ */
+export const instagramSyncSchema = z.object({
+  username: z.string().trim().min(1).max(200),
+  profile: z
+    .object({
+      display_name: z.string().max(200).nullish(),
+      biography: z.string().max(2000).nullish(),
+      category: z.string().max(200).nullish(),
+      external_url: z.string().max(500).nullish(),
+      is_professional: z.boolean().nullish(),
+      follower_count: z.number().int().min(0).max(1_000_000_000).nullish(),
+      following_count: z.number().int().min(0).max(1_000_000_000).nullish(),
+      post_count: z.number().int().min(0).max(1_000_000).nullish(),
+    })
+    .default({}),
+  posts: z.array(instagramSyncPostSchema).max(500).default([]),
+  partial: z.boolean().optional(),
+  notes: z.string().max(1000).nullish(),
+})
+
+export type ConnectInstagramAccountInput = z.infer<typeof connectInstagramAccountSchema>
+export type GenerateInstagramAuditInput = z.infer<typeof generateInstagramAuditSchema>
+export type InstagramSyncInput = z.infer<typeof instagramSyncSchema>
+
+// ---------------------------------------------------------------------------
+// Marketing AI Creative (0021)
+//
+// The brand form, the reference library, the script generator and the AI calendar. Every
+// text field is bounded — these become prompt input sent to a third-party provider, so an
+// unbounded field is both a cost and an abuse surface. NO field here holds a credential:
+// the brand profile is public-facing description, not secrets, and there is nowhere in the
+// schema (or the tables) for an Instagram password to live.
+// ---------------------------------------------------------------------------
+
+/**
+ * The one-time brand form. Every field optional and nullable — a half-filled form still
+ * saves and still helps, and the generator omits blanks. Trimmed, and empty strings coerced
+ * to null so a cleared field stores as null rather than "".
+ */
+const brandField = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullish()
+    .transform((value) => (value && value.length > 0 ? value : null))
+
+export const brandProfileSchema = z.object({
+  business_name: brandField(200),
+  what_we_sell: brandField(2000),
+  target_audience: brandField(2000),
+  tone_voice: brandField(1000),
+  key_offers: brandField(2000),
+  seo_keywords: brandField(1000),
+  extra_notes: brandField(2000),
+})
+
+/**
+ * Add a reference script to the library. `source` is the upload lane: our own past scripts,
+ * a competitor's, an inspiration. ('ai_approved' is written only by the approve flow server-
+ * side and is deliberately NOT accepted here — a client cannot forge house-style examples.)
+ */
+export const addScriptReferenceSchema = z.object({
+  source: z.enum(['own', 'competitor', 'inspiration']),
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(8000),
+  content_type: z.string().trim().max(32).nullish(),
+  platform: z.string().trim().max(32).default('instagram'),
+  attribution: z.string().trim().max(200).nullish(),
+  notes: z.string().trim().max(1000).nullish(),
+})
+
+/** Generate a script from a brief. */
+export const generateScriptSchema = z.object({
+  brief: z.string().trim().min(1).max(2000),
+  content_type: z.enum(['reel', 'post']).default('reel'),
+})
+
+/** Save the team's edits to a draft before approving. All optional; arrays capped. */
+export const updateScriptSchema = z.object({
+  title: z.string().trim().max(200).nullish(),
+  hook: z.string().trim().max(1000).nullish(),
+  script_body: z.string().trim().max(8000).nullish(),
+  caption: z.string().trim().max(4000).nullish(),
+  hashtags: z.array(z.string().trim().min(1).max(100)).max(60).nullish(),
+  seo_keywords: z.array(z.string().trim().min(1).max(100)).max(60).nullish(),
+})
+
+/**
+ * Generate a content plan. `start_date` is a plain calendar date (YYYY-MM-DD); the service
+ * derives the 7 or 30 dates and the end from range_kind, so only the start is accepted.
+ */
+export const generatePlanSchema = z.object({
+  range_kind: z.enum(['week', 'month']).default('week'),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD'),
+  brief: z.string().trim().max(2000).nullish(),
+})
+
+/** Commit selected proposed items into the real calendar, by their index in the plan. */
+export const commitPlanSchema = z.object({
+  item_indices: z.array(z.number().int().min(0).max(400)).min(1).max(60),
+})
+
+export type BrandProfileFormInput = z.infer<typeof brandProfileSchema>
+export type AddScriptReferenceInput = z.infer<typeof addScriptReferenceSchema>
+export type GenerateScriptInput = z.infer<typeof generateScriptSchema>
+export type UpdateScriptFormInput = z.infer<typeof updateScriptSchema>
+export type GeneratePlanInput = z.infer<typeof generatePlanSchema>
+export type CommitPlanInput = z.infer<typeof commitPlanSchema>

@@ -12,6 +12,10 @@ import { SIDEBAR_SHELL } from '@/components/shared/chrome'
  * group: a route group adds no URL segment, so (sales)/dashboard would resolve
  * to /dashboard and collide with the CEO module's own dashboard, and
  * (sales)/my-tasks would collide with the Tender module's.
+ *
+ * The module's navigation lives in SalesSidebarNav. It is listed there and nowhere
+ * else — being in this layout, it renders once per module and is preserved across
+ * navigation between the module's own pages.
  */
 export default async function SalesLayout({ children }: { children: React.ReactNode }) {
   const user = await requireDepartment(SALES_DEPARTMENT_SLUG)

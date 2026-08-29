@@ -1,8 +1,10 @@
 import Link from 'next/link'
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { ContentCalendarView } from '@/components/marketing/ContentCalendarView'
+import { AICalendarPanel } from '@/components/marketing/AICalendarPanel'
 import { getContentItems } from '@/lib/marketing/dashboard'
 import { MARKETING_DEPARTMENT_SLUG } from '@/lib/services/marketing'
+import { listPlans } from '@/lib/services/marketing-creative'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +22,10 @@ export default async function ContentCalendarPage() {
   const user = await requireDepartment(MARKETING_DEPARTMENT_SLUG)
   const readOnly = isReadOnlyFor(user, MARKETING_DEPARTMENT_SLUG)
 
-  const items = await getContentItems(user.organization_id)
+  const [items, plans] = await Promise.all([
+    getContentItems(user.organization_id),
+    listPlans(),
+  ])
 
   return (
     <div className="space-y-6 p-6">
@@ -41,6 +46,8 @@ export default async function ContentCalendarPage() {
           </Link>
         )}
       </div>
+
+      <AICalendarPanel plans={plans} readOnly={readOnly} />
 
       <ContentCalendarView items={items} initialMonth={currentMonth()} />
     </div>

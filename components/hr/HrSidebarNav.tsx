@@ -11,6 +11,7 @@ import {
   Wallet,
   Target,
   ListChecks,
+  ScrollText,
   ArrowLeft,
 } from 'lucide-react'
 import {
@@ -40,7 +41,15 @@ const NAV_SENSITIVE = [
   { href: '/hr/performance', label: 'Performance', icon: Target },
 ]
 
-const NAV_TAIL = [{ href: '/hr/my-tasks', label: 'My Tasks', icon: ListChecks }]
+/**
+ * Always last, and always shown — every HR employee files their own periodic report,
+ * the lead included. Beside My Tasks because both are the person's own work rather
+ * than the department's queues.
+ */
+const NAV_TAIL = [
+  { href: '/hr/my-tasks', label: 'My Tasks', icon: ListChecks },
+  { href: '/hr/my-reports', label: 'My Reports', icon: ScrollText },
+]
 
 export function HrSidebarNav({ isCeo, isLead }: { isCeo: boolean; isLead: boolean }) {
   const pathname = usePathname()

@@ -16,6 +16,10 @@ import { SIDEBAR_SHELL } from '@/components/shared/chrome'
  * The guard is requireDepartment(DISCOM_DEPARTMENT_SLUG), not requireUser(): DISCOM
  * is a normal department — its own staff, plus the CEO read-only. Everyone else is
  * redirected at the shell.
+ *
+ * The module's navigation lives in DiscomSidebarNav. It is listed there and nowhere
+ * else — being in this layout, it renders once per module and is preserved across
+ * navigation between the module's own pages.
  */
 export default async function DiscomLayout({ children }: { children: React.ReactNode }) {
   const user = await requireDepartment(DISCOM_DEPARTMENT_SLUG)

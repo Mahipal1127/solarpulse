@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { AppUser } from '@/lib/types'
@@ -10,8 +11,21 @@ export interface SessionUser extends AppUser {
   departmentSlug: string | null
 }
 
-/** Resolves the signed-in user plus their role name, or null if not signed in. */
-export async function getSessionUser(): Promise<SessionUser | null> {
+/**
+ * Resolves the signed-in user plus their role name, or null if not signed in.
+ *
+ * MEMOISED PER REQUEST. Every module layout guards, and then every page beneath it guards again, so
+ * this ran at least twice on every navigation — and each run costs two sequential network
+ * round-trips: auth.getUser() revalidates the token against Supabase Auth, then the users row is
+ * fetched with its role and department embeds. cache() collapses the duplicates within a single
+ * render pass, which is the documented way to dedupe non-fetch data access (see "Deduplicating
+ * requests" in node_modules/next/dist/docs/01-app/02-guides/caching-without-cache-components.md).
+ *
+ * This is per-request memoisation, NOT a cross-request cache — React discards it when the render
+ * ends. That distinction is load-bearing: anything that outlived the request would serve one user's
+ * identity to the next, so never swap this for a persistent cache keyed on nothing.
+ */
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createSupabaseServerClient()
   const {
     data: { user },
@@ -46,7 +60,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     departmentName: department?.name ?? null,
     departmentSlug: department?.slug ?? null,
   }
-}
+})
 
 /**
  * Server-side role gate. Call at the top of every server component under (ceo)/.

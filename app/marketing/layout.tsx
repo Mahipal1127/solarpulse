@@ -16,6 +16,11 @@ import { SIDEBAR_SHELL } from '@/components/shared/chrome'
  * The guard is requireDepartment(MARKETING_DEPARTMENT_SLUG), not requireUser():
  * Marketing is a normal department — its own staff, plus the CEO read-only. Everyone
  * else is redirected at the shell.
+ *
+ * The module's navigation lives in MarketingSidebarNav. It is listed there and nowhere
+ * else — being in this layout, it renders once per module and is preserved across
+ * navigation between the module's own pages, so switching surfaces repaints only the
+ * content area.
  */
 export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
   const user = await requireDepartment(MARKETING_DEPARTMENT_SLUG)
