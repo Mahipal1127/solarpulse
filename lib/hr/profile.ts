@@ -44,6 +44,7 @@ export interface EmployeeProfile {
   employmentStatus: string
   profilePhotoPath: string | null
   idCardFilePath: string | null
+  idCardBackFilePath: string | null
   idCardGeneratedAt: string | null
 }
 
@@ -56,7 +57,7 @@ export async function getEmployeeProfile(employeeId: string): Promise<EmployeePr
   const { data } = await supabase
     .from('employees')
     .select(
-      'id, user_id, designation, employee_code, date_joined, employment_status, phone, whatsapp_number, profile_photo_path, id_card_file_path, id_card_generated_at, users!employees_user_id_fkey!inner(full_name, email, departments(name), organizations(name))'
+      'id, user_id, designation, employee_code, date_joined, employment_status, phone, whatsapp_number, profile_photo_path, id_card_file_path, id_card_back_file_path, id_card_generated_at, users!employees_user_id_fkey!inner(full_name, email, departments(name), organizations(name))'
     )
     .eq('id', employeeId)
     .maybeSingle()
@@ -85,6 +86,7 @@ export async function getEmployeeProfile(employeeId: string): Promise<EmployeePr
     employmentStatus: data.employment_status as string,
     profilePhotoPath: (data.profile_photo_path as string | null) ?? null,
     idCardFilePath: (data.id_card_file_path as string | null) ?? null,
+    idCardBackFilePath: (data.id_card_back_file_path as string | null) ?? null,
     idCardGeneratedAt: (data.id_card_generated_at as string | null) ?? null,
   }
 }

@@ -3,11 +3,13 @@ import { z } from 'zod'
 export const taskPriority = z.enum(['low', 'medium', 'high', 'urgent'])
 export const taskStatus = z.enum(['pending', 'in_progress', 'delayed', 'completed', 'archived'])
 
+// The CEO assigns to a DEPARTMENT only — never to a person. There is no
+// assigned_user_id here on purpose: naming an individual is the department
+// manager's job, done later through updateTaskSchema (the delegation path).
 export const createTaskSchema = z.object({
   title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
   description: z.string().trim().max(5000).optional().nullable(),
   assigned_department_id: z.string().uuid('Select a department'),
-  assigned_user_id: z.string().uuid().optional().nullable(),
   priority: taskPriority.default('medium'),
   due_date: z.string().datetime().optional().nullable(),
 })
@@ -1279,6 +1281,8 @@ export const employeeDocumentType = z.enum([
 export const exitType = z.enum(['resignation', 'termination', 'end_of_contract'])
 export const attendanceStatus = z.enum(['present', 'absent', 'half_day', 'on_leave', 'holiday'])
 export const leaveType = z.enum(['casual', 'sick', 'earned', 'unpaid'])
+export const applicationRecipient = z.enum(['hr', 'ceo', 'both'])
+export const applicationStatus = z.enum(['submitted', 'acknowledged', 'closed'])
 export const salaryStatus = z.enum(['draft', 'finalized', 'paid'])
 export const kpiStatus = z.enum(['in_progress', 'met', 'not_met'])
 
@@ -1367,6 +1371,25 @@ export const createEmployeeSchema = z.object({
  * base64 string cannot bloat the request; the real image-size limit is enforced on the decoded
  * bytes server-side against MAX_UPLOAD_BYTES.
  */
+/**
+ * One document collected during onboarding, sent inline as a data URI for the same reason
+ * the photo is: the storage path is keyed by employee id, which does not exist until the
+ * row is inserted. The server decodes and uploads it once the employee exists, then
+ * records the employee_documents row. PDFs and images only; the ~28MB base64 ceiling
+ * (~20MB decoded) matches MAX_UPLOAD_BYTES, re-checked on the decoded bytes server-side.
+ */
+export const onboardingDocumentSchema = z.object({
+  document_type: employeeDocumentType,
+  file_name: z.string().trim().min(1).max(300),
+  file_data: z
+    .string()
+    .regex(
+      /^data:(image\/(png|jpe?g|webp)|application\/pdf);base64,/,
+      'Document must be a PDF or an image'
+    )
+    .max(28_000_000, 'Document is too large'),
+})
+
 export const onboardEmployeeSchema = createEmployeeSchema.extend({
   whatsapp_number: optionalPhone,
   // A data URI: 'data:image/{png|jpeg|webp};base64,....'. Optional — a card renders an initials
@@ -1377,6 +1400,14 @@ export const onboardEmployeeSchema = createEmployeeSchema.extend({
     .max(7_000_000, 'Photo is too large')
     .optional()
     .nullable(),
+  // Optional onboarding documents (ID/address proof, offer letter, …), each inline. Bounded
+  // so one request cannot carry an unlimited pile; individual size is checked per item above.
+  documents: z.array(onboardingDocumentSchema).max(15).optional(),
+  // OPTIONAL starting salary the HR lead sets during onboarding. When present the service creates
+  // the employee's first salary_records row (SENSITIVE tier — HR-lead/CEO only, which onboarding
+  // already is) so pay does not have to be re-entered later, and notifies Finance to set up the
+  // disbursement WITHOUT exposing the figure to them. Absent → no salary row, unchanged behaviour.
+  base_salary: salaryAmount.optional(),
 })
 
 /**
@@ -1432,20 +1463,6 @@ export const createEmployeeDocumentSchema = z.object({
   file_name: z.string().trim().min(1).max(300),
 })
 
-// Attendance ----------------------------------------------------------------
-
-/**
- * HR marking attendance for an employee (or correcting a record). Self check-in/out is
- * a separate, bodyless path — see the my-attendance routes — because it stamps now()
- * server-side and needs no client-chosen time.
- */
-export const markAttendanceSchema = z.object({
-  employee_id: z.string().uuid('Select an employee'),
-  date: z.string().date(),
-  status: attendanceStatus.default('present'),
-  check_in: z.string().datetime().optional().nullable(),
-  check_out: z.string().datetime().optional().nullable(),
-})
 
 // Leave ---------------------------------------------------------------------
 
@@ -1465,6 +1482,27 @@ export const submitLeaveSchema = z
     message: 'Leave end date must be on or after the start date',
     path: ['end_date'],
   })
+
+// Applications --------------------------------------------------------------
+
+/**
+ * A free-text application from any employee to HR, the CEO, or both. employee_id is
+ * derived from the caller server-side, so it is not part of the body — mirroring leave.
+ */
+export const submitApplicationSchema = z.object({
+  recipient: applicationRecipient,
+  subject: z.string().trim().min(1, 'Add a subject').max(200),
+  body: z.string().trim().min(1, 'Write your application').max(5000),
+})
+
+/**
+ * The addressed side (HR members for hr/both, CEO for ceo/both) advancing an
+ * application's lifecycle. Only the status is theirs to change; RLS confirms they are
+ * on the addressed side.
+ */
+export const updateApplicationStatusSchema = z.object({
+  status: applicationStatus,
+})
 
 // Payroll -------------------------------------------------------------------
 
@@ -1533,13 +1571,15 @@ export type CreateInterviewInput = z.infer<typeof createInterviewSchema>
 export type UpdateInterviewInput = z.infer<typeof updateInterviewSchema>
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>
 export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>
+export type OnboardingDocumentInput = z.infer<typeof onboardingDocumentSchema>
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
 export type ResolveTokenInput = z.infer<typeof resolveTokenSchema>
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>
 export type ProcessExitInput = z.infer<typeof processExitSchema>
 export type CreateEmployeeDocumentInput = z.infer<typeof createEmployeeDocumentSchema>
-export type MarkAttendanceInput = z.infer<typeof markAttendanceSchema>
 export type SubmitLeaveInput = z.infer<typeof submitLeaveSchema>
+export type SubmitApplicationInput = z.infer<typeof submitApplicationSchema>
+export type UpdateApplicationStatusInput = z.infer<typeof updateApplicationStatusSchema>
 export type CreateSalaryRecordInput = z.infer<typeof createSalaryRecordSchema>
 export type UpdateSalaryRecordInput = z.infer<typeof updateSalaryRecordSchema>
 export type CreateKpiInput = z.infer<typeof createKpiSchema>
@@ -2173,3 +2213,16 @@ export type GenerateScriptInput = z.infer<typeof generateScriptSchema>
 export type UpdateScriptFormInput = z.infer<typeof updateScriptSchema>
 export type GeneratePlanInput = z.infer<typeof generatePlanSchema>
 export type CommitPlanInput = z.infer<typeof commitPlanSchema>
+
+/*
+ * The company contact footer printed on every ID card (0023). All three fields are
+ * optional/blankable — an empty footer is valid — but each is length-bounded so the
+ * card layout can rely on the text fitting. '' is normalised to null by the service.
+ */
+export const companyDetailsSchema = z.object({
+  address: z.string().trim().max(300).nullish(),
+  phone: z.string().trim().max(60).nullish(),
+  email: z.string().trim().max(200).email('Enter a valid email').nullish().or(z.literal('')),
+})
+
+export type CompanyDetailsInput = z.infer<typeof companyDetailsSchema>

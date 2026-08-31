@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Badge, EmptyState } from '@/components/ui/primitives'
 import { CANDIDATE_STATUSES } from '@/lib/hr/constants'
@@ -28,9 +29,11 @@ interface CandidateWithInterviews extends Candidate {
 export function CandidateList({
   candidates,
   readOnly,
+  canOnboard,
 }: {
   candidates: CandidateWithInterviews[]
   readOnly: boolean
+  canOnboard: boolean
 }) {
   const [filter, setFilter] = useState<string>('all')
   const filtered =
@@ -61,7 +64,7 @@ export function CandidateList({
 
       <div className="space-y-3">
         {filtered.map((c) => (
-          <CandidateCard key={c.id} candidate={c} readOnly={readOnly} />
+          <CandidateCard key={c.id} candidate={c} readOnly={readOnly} canOnboard={canOnboard} />
         ))}
       </div>
     </div>
@@ -71,9 +74,11 @@ export function CandidateList({
 function CandidateCard({
   candidate,
   readOnly,
+  canOnboard,
 }: {
   candidate: CandidateWithInterviews
   readOnly: boolean
+  canOnboard: boolean
 }) {
   const router = useRouter()
   const [status, setStatus] = useState<CandidateStatus>(candidate.status)
@@ -114,24 +119,37 @@ function CandidateCard({
           </p>
         </div>
 
-        {readOnly ? (
-          <Badge className={CANDIDATE_STATUS_STYLES[status]}>
-            {CANDIDATE_STATUS_LABELS[status]}
-          </Badge>
-        ) : (
-          <select
-            value={status}
-            disabled={pending}
-            onChange={(e) => changeStatus(e.target.value as CandidateStatus)}
-            className="rounded-lg border border-border-subtle px-2 py-1 text-xs outline-none focus:border-brand-gold disabled:opacity-60"
-          >
-            {CANDIDATE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {CANDIDATE_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Once hired, the lead/CEO can jump straight into onboarding with the candidate's
+              details carried over as prefills. Rejected/other stages show no shortcut. */}
+          {canOnboard && status === 'hired' && (
+            <Link
+              href={onboardHref(candidate)}
+              className="rounded-lg bg-brand-gold px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-orange"
+            >
+              Onboard →
+            </Link>
+          )}
+
+          {readOnly ? (
+            <Badge className={CANDIDATE_STATUS_STYLES[status]}>
+              {CANDIDATE_STATUS_LABELS[status]}
+            </Badge>
+          ) : (
+            <select
+              value={status}
+              disabled={pending}
+              onChange={(e) => changeStatus(e.target.value as CandidateStatus)}
+              className="rounded-lg border border-border-subtle px-2 py-1 text-xs outline-none focus:border-brand-gold disabled:opacity-60"
+            >
+              {CANDIDATE_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {CANDIDATE_STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
 
       {candidate.interviews.length > 0 && (
@@ -153,6 +171,20 @@ function CandidateCard({
       {error && <p className="mt-2 text-xs text-status-danger">⚠ {error}</p>}
     </div>
   )
+}
+
+/**
+ * Builds the onboarding-wizard link with the candidate's known details as prefills. The
+ * wizard reads these query params on its Details step. applied_for_role is free text, so it
+ * seeds the designation (not the role dropdown, which is a real roles FK the lead still
+ * picks). Only non-empty values are added.
+ */
+function onboardHref(candidate: Candidate): string {
+  const params = new URLSearchParams({ candidateId: candidate.id, name: candidate.name })
+  if (candidate.email) params.set('email', candidate.email)
+  if (candidate.phone) params.set('phone', candidate.phone)
+  if (candidate.applied_for_role) params.set('designation', candidate.applied_for_role)
+  return `/hr/onboarding/new?${params.toString()}`
 }
 
 function Chip({

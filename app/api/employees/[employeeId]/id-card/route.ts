@@ -26,7 +26,7 @@ export async function POST(
     assertCanManage(user)
     const { employeeId } = await ctx.params
 
-    const path = await generateAndStoreCard(employeeId)
+    const paths = await generateAndStoreCard(employeeId)
 
     await logAction({
       organizationId: user.organization_id,
@@ -34,10 +34,13 @@ export async function POST(
       action: 'id_card_generated',
       entityType: 'employee',
       entityId: employeeId,
-      metadata: { file_path: path },
+      metadata: { front_path: paths.frontPath, back_path: paths.backPath },
     })
 
-    return NextResponse.json({ id_card_file_path: path }, { status: 201 })
+    return NextResponse.json(
+      { id_card_file_path: paths.frontPath, id_card_back_file_path: paths.backPath },
+      { status: 201 }
+    )
   } catch (err) {
     if (err instanceof ServiceError) {
       return NextResponse.json({ error: err.message }, { status: err.status })

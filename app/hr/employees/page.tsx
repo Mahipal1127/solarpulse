@@ -1,9 +1,8 @@
 import Link from 'next/link'
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG, isHrLead } from '@/lib/services/hr'
-import { getEmployeeRoster, getActiveUsers, getRoleOptions } from '@/lib/hr/dashboard'
+import { getEmployeeRoster } from '@/lib/hr/dashboard'
 import { Card, CardHeader, Badge, EmptyState } from '@/components/ui/primitives'
-import { OnboardEmployeeForm } from '@/components/hr/OnboardEmployeeForm'
 import { ExitControl } from '@/components/hr/ExitControl'
 import { EMPLOYMENT_STATUS_LABELS, EMPLOYMENT_STATUS_STYLES } from '@/lib/format'
 import type { EmploymentStatus } from '@/lib/types'
@@ -12,20 +11,16 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Employee management — the roster, onboarding (HR lead / CEO), and exit processing.
- * Onboarding creates a login + users row + employees row together; exit is the atomic
- * teardown. Non-salary personnel fields only — pay and appraisals live in their own
- * gated pages.
+ * Onboarding is the full wizard (details, photo, documents, review) that provisions the
+ * login + users + employees rows and the ID card together; exit is the atomic teardown.
+ * Non-salary personnel fields only — pay and appraisals live in their own gated pages.
  */
 export default async function EmployeesPage() {
   const user = await requireDepartment(HR_DEPARTMENT_SLUG)
   const readOnly = isReadOnlyFor(user, HR_DEPARTMENT_SLUG)
   const lead = isHrLead(user)
 
-  const [roster, users, roles] = await Promise.all([
-    getEmployeeRoster(),
-    lead ? getActiveUsers() : Promise.resolve([]),
-    lead ? getRoleOptions() : Promise.resolve([]),
-  ])
+  const roster = await getEmployeeRoster()
 
   return (
     <div className="space-y-6 p-6">
@@ -40,18 +35,21 @@ export default async function EmployeesPage() {
         <Card>
           <CardHeader
             title="Onboard employee"
-            subtitle="Creates their login, profile, and employee record together"
+            subtitle="Creates their login, profile, documents, and ID card together"
             action={
               <Link
                 href="/hr/onboarding/new"
-                className="rounded-lg border border-brand-gold px-3 py-1.5 text-xs font-medium text-brand-gold transition-colors hover:bg-brand-gold hover:text-white"
+                className="rounded-lg bg-brand-gold px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-orange"
               >
-                Full wizard + ID card →
+                Start onboarding →
               </Link>
             }
           />
           <div className="px-5 py-4">
-            <OnboardEmployeeForm roles={roles} users={users} />
+            <p className="text-sm text-text-muted">
+              The onboarding wizard walks through the new hire&apos;s details, photo, and documents,
+              then provisions their account and generates the ID card in one step.
+            </p>
           </div>
         </Card>
       )}

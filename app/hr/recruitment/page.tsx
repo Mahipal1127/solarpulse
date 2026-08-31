@@ -1,6 +1,6 @@
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { HR_DEPARTMENT_SLUG } from '@/lib/services/hr'
+import { HR_DEPARTMENT_SLUG, isHrLead } from '@/lib/services/hr'
 import { getCandidates, getActiveUsers } from '@/lib/hr/dashboard'
 import { Card, CardHeader } from '@/components/ui/primitives'
 import { CandidateForm } from '@/components/hr/CandidateForm'
@@ -17,6 +17,9 @@ export const dynamic = 'force-dynamic'
 export default async function RecruitmentPage() {
   const user = await requireDepartment(HR_DEPARTMENT_SLUG)
   const readOnly = isReadOnlyFor(user, HR_DEPARTMENT_SLUG)
+  // Onboarding provisions a login, so it is HR-lead / CEO work (the wizard redirects a
+  // non-lead). Only they see the "Onboard" shortcut on a hired candidate.
+  const canOnboard = isHrLead(user) || user.roleName === 'CEO'
   const supabase = await createSupabaseServerClient()
 
   const [candidates, users, deptRes] = await Promise.all([
@@ -65,7 +68,7 @@ export default async function RecruitmentPage() {
         </div>
       )}
 
-      <CandidateList candidates={candidates} readOnly={readOnly} />
+      <CandidateList candidates={candidates} readOnly={readOnly} canOnboard={canOnboard} />
     </div>
   )
 }

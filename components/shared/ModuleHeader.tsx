@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronDown, LogOut } from 'lucide-react'
+import { ChevronDown, LogOut, FileText } from 'lucide-react'
 import { ReportProblemButton } from '@/components/shared/ReportProblemButton'
+import { NotificationBell } from '@/components/shared/NotificationBell'
 
 /**
  * Top bar for a department module: who is signed in, a greeting, the Report button
@@ -96,6 +98,7 @@ export function ModuleHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <NotificationBell />
         <ReportProblemButton />
 
         <div className="relative" ref={menuRef}>
@@ -134,6 +137,17 @@ export function ModuleHeader({
                   {[departmentName, roleName].filter(Boolean).join(' · ')}
                 </p>
               </div>
+              {/* Applications — apply for leave or write to HR/CEO. A company-wide personal
+                  surface under /me, reachable from every module's header. */}
+              <Link
+                role="menuitem"
+                href="/me/applications"
+                onClick={() => setMenuOpen(false)}
+                className="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-brand-slate transition-colors hover:bg-surface-bg"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Applications
+              </Link>
               <button
                 role="menuitem"
                 onClick={signOut}

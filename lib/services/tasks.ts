@@ -42,20 +42,9 @@ export async function createTask(
   if (deptError) throw new ServiceError(deptError.message, 500)
   if (!department) throw new ServiceError('Department not found in this organization', 400)
 
-  if (input.assigned_user_id) {
-    const { data: assignee } = await supabase
-      .from('users')
-      .select('id, department_id')
-      .eq('id', input.assigned_user_id)
-      .eq('organization_id', user.organization_id)
-      .maybeSingle()
-
-    if (!assignee) throw new ServiceError('Assignee not found in this organization', 400)
-    if (assignee.department_id !== input.assigned_department_id) {
-      throw new ServiceError('Assignee does not belong to the selected department', 400)
-    }
-  }
-
+  // No assignee on creation — the CEO assigns to a department, and it lands
+  // unclaimed (assigned_user_id null). The department's manager delegates it to a
+  // person from there; a department with no manager works it as a shared task.
   const { data, error } = await supabase
     .from('tasks')
     .insert({
@@ -64,7 +53,7 @@ export async function createTask(
       description: input.description ?? null,
       created_by: user.id,
       assigned_department_id: input.assigned_department_id,
-      assigned_user_id: input.assigned_user_id ?? null,
+      assigned_user_id: null,
       priority: input.priority,
       due_date: input.due_date ?? null,
       status: 'pending',

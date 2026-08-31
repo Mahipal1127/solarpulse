@@ -26,9 +26,12 @@ export async function POST(
     const { employeeId } = await ctx.params
 
     await revokeAndReissueToken(user, employeeId)
-    const path = await generateAndStoreCard(employeeId)
+    const paths = await generateAndStoreCard(employeeId)
 
-    return NextResponse.json({ id_card_file_path: path }, { status: 201 })
+    return NextResponse.json(
+      { id_card_file_path: paths.frontPath, id_card_back_file_path: paths.backPath },
+      { status: 201 }
+    )
   } catch (err) {
     if (err instanceof ServiceError) {
       return NextResponse.json({ error: err.message }, { status: err.status })

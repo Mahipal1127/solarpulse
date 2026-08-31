@@ -7,9 +7,10 @@ import {
   UserPlus,
   Users,
   CalendarCheck,
-  CalendarClock,
+  FileText,
   Wallet,
   Target,
+  Building2,
   ListChecks,
   ScrollText,
   ArrowLeft,
@@ -33,12 +34,14 @@ const NAV_BASE = [
   { href: '/hr/recruitment', label: 'Recruitment', icon: UserPlus },
   { href: '/hr/employees', label: 'Employees', icon: Users },
   { href: '/hr/attendance', label: 'Attendance', icon: CalendarCheck },
-  { href: '/hr/leave', label: 'Leave', icon: CalendarClock },
+  { href: '/hr/applications', label: 'Applications', icon: FileText },
 ]
 
 const NAV_SENSITIVE = [
   { href: '/hr/payroll', label: 'Payroll', icon: Wallet },
   { href: '/hr/performance', label: 'Performance', icon: Target },
+  // Lead-only: the ID-card footer. Editing it is the same tier as generating cards.
+  { href: '/hr/company-details', label: 'Company Details', icon: Building2 },
 ]
 
 /**

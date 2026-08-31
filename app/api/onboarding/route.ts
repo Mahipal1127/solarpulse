@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
     let cardGenerated = true
     let idCardFilePath: string | null = null
     try {
-      idCardFilePath = await generateAndStoreCard(employee.id)
+      const paths = await generateAndStoreCard(employee.id)
+      idCardFilePath = paths.frontPath
     } catch {
       // The employee is provisioned; a card render failure must not fail the onboard. HR can
       // regenerate from the profile board. We surface the state rather than swallowing it.

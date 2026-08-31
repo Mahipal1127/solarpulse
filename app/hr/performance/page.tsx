@@ -2,12 +2,21 @@ import Link from 'next/link'
 import { requireDepartment } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG, isHrLead } from '@/lib/services/hr'
 import { getKpis, getEmployeeRoster } from '@/lib/hr/dashboard'
-import { Card, CardHeader, Badge, EmptyState } from '@/components/ui/primitives'
+import { getTeamPerformanceOverview } from '@/lib/services/performance'
+import { Card, CardHeader, Badge, EmptyState, StatCard } from '@/components/ui/primitives'
 import { KpiForm } from '@/components/hr/KpiForm'
 import { AppraisalForm } from '@/components/hr/AppraisalForm'
+import { TeamPerformanceTable } from '@/components/hr/TeamPerformanceTable'
 import { KPI_STATUS_LABELS, KPI_STATUS_STYLES, formatDate } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
+
+/** Trailing windows offered by the period selector. */
+const PERIOD_OPTIONS = [
+  { days: 7, label: '7 days' },
+  { days: 30, label: '30 days' },
+  { days: 90, label: '90 days' },
+] as const
 
 /**
  * Performance — KPIs and appraisals.
@@ -22,11 +31,28 @@ export const dynamic = 'force-dynamic'
  * read on the individual employee's profile under RLS, not laid out in a department-wide
  * table, so a stray join here cannot expose one review to the wrong reader.
  */
-export default async function PerformancePage() {
+export default async function PerformancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>
+}) {
   const user = await requireDepartment(HR_DEPARTMENT_SLUG)
   const lead = isHrLead(user)
+  // Detailed team analytics are strict tier: the HR lead and the CEO only (the service enforces
+  // the same rule). A plain HR Executive still sets/sees KPIs, but not the whole-team board.
+  const canViewAnalytics = lead || user.roleName === 'CEO'
 
-  const [kpis, roster] = await Promise.all([getKpis(), lead ? getEmployeeRoster() : Promise.resolve([])])
+  const { period } = await searchParams
+  const requested = Number(period)
+  const periodDays = PERIOD_OPTIONS.some((o) => o.days === requested) ? requested : 30
+
+  const [kpis, roster, overview] = await Promise.all([
+    getKpis(),
+    lead ? getEmployeeRoster() : Promise.resolve([]),
+    canViewAnalytics
+      ? getTeamPerformanceOverview(user, periodDays)
+      : Promise.resolve(null),
+  ])
 
   const activeRoster = roster
     .filter((e) => e.employment_status !== 'exited')
@@ -37,9 +63,57 @@ export default async function PerformancePage() {
       <header>
         <h1 className="text-2xl font-semibold text-brand-slate">Performance</h1>
         <p className="mt-1 text-sm text-text-muted">
-          KPIs and appraisals. Appraisals are visible only to the HR lead and CEO.
+          Team analytics, KPIs, and appraisals. Analytics and appraisals are visible only to the HR
+          lead and CEO.
         </p>
       </header>
+
+      {overview && (
+        <Card>
+          <CardHeader
+            title="Team analytics"
+            subtitle={`${overview.totals.people} active ${overview.totals.people === 1 ? 'person' : 'people'} · trailing ${overview.periodDays} days`}
+            action={
+              <div className="flex gap-1">
+                {PERIOD_OPTIONS.map((o) => (
+                  <Link
+                    key={o.days}
+                    href={`/hr/performance?period=${o.days}`}
+                    scroll={false}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      o.days === overview.periodDays
+                        ? 'bg-brand-slate text-white'
+                        : 'border border-border-subtle text-text-muted hover:bg-surface-bg'
+                    }`}
+                  >
+                    {o.label}
+                  </Link>
+                ))}
+              </div>
+            }
+          />
+          <div className="space-y-5 px-5 py-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatCard
+                label="Task completion"
+                value={overview.totals.completionRate === null ? '—' : `${overview.totals.completionRate}%`}
+                hint={`${overview.totals.tasksCompleted}/${overview.totals.tasksAssigned} tasks`}
+                tone="brand"
+              />
+              <StatCard label="Present days" value={overview.totals.present} hint="across the team" />
+              <StatCard
+                label="Absent / leave"
+                value={`${overview.totals.absent} / ${overview.totals.onLeave}`}
+                hint="days"
+                tone={overview.totals.absent > 0 ? 'warning' : 'default'}
+              />
+              <StatCard label="Hours worked" value={overview.totals.totalHours} hint="closed shifts" />
+            </div>
+
+            <TeamPerformanceTable rows={overview.rows} />
+          </div>
+        </Card>
+      )}
 
       {lead && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

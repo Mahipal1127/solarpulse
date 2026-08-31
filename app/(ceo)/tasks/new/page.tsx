@@ -9,19 +9,11 @@ export default async function NewTaskPage() {
   const user = await requireRole('CEO')
   const supabase = await createSupabaseServerClient()
 
-  const [{ data: departments }, { data: users }] = await Promise.all([
-    supabase
-      .from('departments')
-      .select('id, name, slug, organization_id, parent_department_id, created_at')
-      .eq('organization_id', user.organization_id)
-      .order('name'),
-    supabase
-      .from('users')
-      .select('id, full_name, department_id')
-      .eq('organization_id', user.organization_id)
-      .eq('is_active', true)
-      .order('full_name'),
-  ])
+  const { data: departments } = await supabase
+    .from('departments')
+    .select('id, name, slug, organization_id, parent_department_id, created_at')
+    .eq('organization_id', user.organization_id)
+    .order('name')
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -36,10 +28,7 @@ export default async function NewTaskPage() {
       </header>
 
       <Card className="p-6">
-        <CreateTaskForm
-          departments={(departments ?? []) as Department[]}
-          users={users ?? []}
-        />
+        <CreateTaskForm departments={(departments ?? []) as Department[]} />
       </Card>
     </div>
   )

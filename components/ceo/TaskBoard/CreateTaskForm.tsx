@@ -6,15 +6,19 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
-import type { Department, AppUser } from '@/lib/types'
+import type { Department } from '@/lib/types'
 
 // Mirrors createTaskSchema but takes browser-native form values (datetime-local
 // string, '' for empty selects) and converts them at submit time.
+//
+// There is deliberately no assignee field. The CEO assigns work to a DEPARTMENT,
+// never to a person — the department's manager is the one who delegates it to an
+// individual (via the delegation inbox on that department's dashboard). In a
+// department with no manager, the task stays department-wide and everyone works it.
 const formSchema = z.object({
   title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
   description: z.string().trim().max(5000).optional(),
   assigned_department_id: z.string().uuid('Select a department'),
-  assigned_user_id: z.string().optional(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']),
   due_date: z.string().optional(),
 })
@@ -24,13 +28,7 @@ type FormValues = z.infer<typeof formSchema>
 const inputClass =
   'mt-1 w-full rounded-lg border border-border-subtle px-3 py-2 text-sm outline-none focus:border-brand-gold focus:ring-1 focus:ring-brand-slate'
 
-export function CreateTaskForm({
-  departments,
-  users,
-}: {
-  departments: Department[]
-  users: Pick<AppUser, 'id' | 'full_name' | 'department_id'>[]
-}) {
+export function CreateTaskForm({ departments }: { departments: Department[] }) {
   const router = useRouter()
   const [files, setFiles] = useState<File[]>([])
   const [serverError, setServerError] = useState<string | null>(null)
@@ -39,15 +37,11 @@ export function CreateTaskForm({
   const {
     register,
     handleSubmit,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { priority: 'medium' },
   })
-
-  const selectedDepartment = watch('assigned_department_id')
-  const eligibleAssignees = users.filter((u) => u.department_id === selectedDepartment)
 
   async function onSubmit(values: FormValues) {
     setServerError(null)
@@ -60,7 +54,6 @@ export function CreateTaskForm({
         title: values.title,
         description: values.description || null,
         assigned_department_id: values.assigned_department_id,
-        assigned_user_id: values.assigned_user_id || null,
         priority: values.priority,
         due_date: values.due_date ? new Date(values.due_date).toISOString() : null,
       }),
@@ -161,28 +154,10 @@ export function CreateTaskForm({
           {errors.assigned_department_id && (
             <p className="mt-1 text-xs text-status-danger">{errors.assigned_department_id.message}</p>
           )}
-        </div>
-
-        <div>
-          <label htmlFor="assigned_user_id" className="block text-sm font-medium text-text-muted">
-            Assignee
-          </label>
-          <select
-            id="assigned_user_id"
-            {...register('assigned_user_id')}
-            className={inputClass}
-            disabled={!selectedDepartment}
-          >
-            <option value="">Unassigned</option>
-            {eligibleAssignees.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name}
-              </option>
-            ))}
-          </select>
-          {selectedDepartment && eligibleAssignees.length === 0 && (
-            <p className="mt-1 text-xs text-text-muted">No users in this department yet.</p>
-          )}
+          <p className="mt-1 text-xs text-text-muted">
+            The department&apos;s manager delegates this to a person. Departments with no manager
+            work it together.
+          </p>
         </div>
 
         <div>

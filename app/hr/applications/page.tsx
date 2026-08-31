@@ -2,7 +2,9 @@ import Link from 'next/link'
 import { requireDepartment } from '@/lib/auth/guards'
 import { HR_DEPARTMENT_SLUG } from '@/lib/services/hr'
 import { getLeaveQueue } from '@/lib/hr/dashboard'
+import { listApplicationsForHr } from '@/lib/services/applications'
 import { Card, CardHeader, Badge, EmptyState } from '@/components/ui/primitives'
+import { ApplicationsInbox } from '@/components/shared/ApplicationsInbox'
 import {
   LEAVE_TYPE_LABELS,
   LEAVE_STATUS_LABELS,
@@ -15,31 +17,40 @@ import type { LeaveStatus } from '@/lib/types'
 export const dynamic = 'force-dynamic'
 
 /**
- * The HR leave queue — every request across the org, most recent first. This is a
- * monitoring view: the DECISION on a leave request is made on the CEO's Approvals page
- * (a leave request creates a linked approval, and deciding it there propagates the
- * status back here). Surfacing the decision in one place — the same Approvals page every
- * other request type uses — keeps HR from being a second, parallel approval mechanism.
+ * HR Applications — everything employees send in, in one place:
+ *   - Leave requests (the whole org's queue). Monitoring only: the DECISION is made on
+ *     the CEO's Approvals page and its outcome flows back here.
+ *   - Free-text applications addressed to HR (recipient 'hr' or 'both'), which HR works by
+ *     advancing a lightweight status (submitted → acknowledged → closed).
  */
-export default async function HrLeavePage() {
+export default async function HrApplicationsPage() {
   await requireDepartment(HR_DEPARTMENT_SLUG)
-  const queue = await getLeaveQueue()
+  const [queue, applications] = await Promise.all([getLeaveQueue(), listApplicationsForHr()])
 
   const pending = queue.filter((l) => l.status === 'pending')
   const decided = queue.filter((l) => l.status !== 'pending')
+  const openApplications = applications.filter((a) => a.status !== 'closed')
 
   return (
     <div className="space-y-6 p-6">
       <header>
-        <h1 className="text-2xl font-semibold text-brand-slate">Leave</h1>
+        <h1 className="text-2xl font-semibold text-brand-slate">Applications</h1>
         <p className="mt-1 text-sm text-text-muted">
-          All leave requests across the company. Requests are approved or rejected from the
-          Approvals page; the outcome is reflected here.
+          Leave requests and written applications from across the company. Leave is approved or
+          rejected on the Approvals page; the outcome is reflected here.
         </p>
       </header>
 
       <Card>
-        <CardHeader title="Awaiting decision" subtitle={`${pending.length} pending`} />
+        <CardHeader
+          title="Written applications"
+          subtitle={`${openApplications.length} open`}
+        />
+        <ApplicationsInbox applications={applications} showRecipient />
+      </Card>
+
+      <Card>
+        <CardHeader title="Leave — awaiting decision" subtitle={`${pending.length} pending`} />
         {pending.length === 0 ? (
           <EmptyState title="Nothing pending" description="New leave requests appear here." />
         ) : (
@@ -48,7 +59,7 @@ export default async function HrLeavePage() {
       </Card>
 
       <Card>
-        <CardHeader title="Decided" />
+        <CardHeader title="Leave — decided" />
         {decided.length === 0 ? (
           <EmptyState title="No decided requests yet" />
         ) : (

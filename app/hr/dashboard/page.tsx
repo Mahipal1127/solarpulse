@@ -95,10 +95,10 @@ export default async function HrDashboardPage() {
             My attendance
           </Link>
           <Link
-            href="/me/leave"
+            href="/me/applications"
             className="rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-brand-slate transition-colors hover:bg-surface-bg"
           >
-            My leave
+            My applications
           </Link>
           <Link
             href="/me/payslips"
@@ -118,7 +118,7 @@ export default async function HrDashboardPage() {
             subtitle="Decided from the Approvals page"
             action={
               <Link
-                href="/hr/leave"
+                href="/hr/applications"
                 className="text-xs font-medium text-brand-slate hover:text-brand-gold"
               >
                 All →

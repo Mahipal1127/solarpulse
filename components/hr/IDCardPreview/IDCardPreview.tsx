@@ -2,34 +2,46 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { IdCardLayout, CARD_WIDTH, CARD_HEIGHT } from './cardLayout'
+import {
+  IdCardFront,
+  IdCardBack,
+  CARD_WIDTH,
+  CARD_HEIGHT,
+  type CardFooter,
+} from './cardLayout'
 import { WhatsAppShareButton } from './WhatsAppShareButton'
 
 /**
- * The on-screen ID card: the SAME IdCardLayout the server renders to PNG, shown live so HR sees
- * exactly what the generated card looks like. It scales the fixed 640×400 layout down responsively
- * with a CSS transform so it fits any column without the layout itself becoming fluid (Satori needs
- * fixed sizes, and matching them keeps preview and PNG identical).
+ * The on-screen ID card: the SAME IdCardFront / IdCardBack the server renders to PNG, shown live
+ * so HR sees exactly what the generated two-sided card looks like. Each side scales the fixed
+ * 620×1000 layout down responsively with a CSS transform (Satori needs fixed sizes, and matching
+ * them keeps preview and PNG identical). The logo is loaded from the public URL for the preview;
+ * the server bakes it in as a data URI.
  *
- * Below the card sit the two actions the feature actually supports:
- *  - Download the generated PNG (the real, shareable artifact).
+ * Below the cards sit the actions the feature supports:
+ *  - Download PDF — the real, printable two-page artifact (front + back), built on demand.
+ *  - Download the front PNG — a quick shareable image.
  *  - Share via WhatsApp — a wa.me link that pre-fills TEXT ONLY. WhatsApp cannot pre-attach an
- *    image from a link, so the copy says so plainly and tells the sender to attach the downloaded
- *    card. Pretending otherwise would be the dishonest UI the brief warns against.
+ *    image from a link, so the copy says so and tells the sender to attach the downloaded card.
  *
  * Management actions (regenerate after a photo change, revoke+reissue for a lost card) show only
- * when `canManage`. Regenerate is cosmetic and keeps the token; revoke rotates it — the copy makes
- * that distinction explicit so no one revokes a token just to refresh a photo.
+ * when `canManage`. Regenerate is cosmetic and keeps the token; revoke rotates it.
  */
+
+const LOGO_URL = '/logo.png'
+
 export function IDCardPreview({
   employeeId,
   fullName,
   designation,
-  departmentName,
   employeeCode,
+  dateJoined,
+  phone,
+  email,
   organizationName,
   qrSrc,
   photoSrc,
+  footer,
   cardImageUrl,
   generatedAt,
   canManage,
@@ -38,13 +50,16 @@ export function IDCardPreview({
   employeeId: string
   fullName: string
   designation: string | null
-  departmentName: string | null
   employeeCode: string | null
+  dateJoined: string | null
+  phone: string | null
+  email: string | null
   organizationName: string
   /** QR data URI for the LIVE preview. The downloaded PNG has its own embedded QR. */
   qrSrc: string
   photoSrc: string | null
-  /** Signed URL of the generated PNG, or null if none generated yet. */
+  footer: CardFooter
+  /** Signed URL of the generated front PNG, or null if none generated yet. */
   cardImageUrl: string | null
   generatedAt: string | null
   canManage: boolean
@@ -91,33 +106,29 @@ export function IDCardPreview({
     router.refresh()
   }
 
-  // Scale the fixed layout to fit a ~360px column while preserving the 640×400 aspect.
-  const scale = 360 / CARD_WIDTH
+  // Scale the fixed layout to fit a ~260px-wide column while preserving the 620×1000 aspect.
+  const scale = 260 / CARD_WIDTH
 
   return (
     <div className="space-y-4">
-      <div
-        className="relative overflow-hidden rounded-2xl border border-border-subtle"
-        style={{ width: CARD_WIDTH * scale, height: CARD_HEIGHT * scale }}
-      >
-        <div
-          style={{
-            width: CARD_WIDTH,
-            height: CARD_HEIGHT,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-          }}
-        >
-          <IdCardLayout
+      <div className="flex flex-wrap gap-6">
+        <PreviewSide scale={scale} label="Front">
+          <IdCardFront
             fullName={fullName}
             designation={designation}
-            departmentName={departmentName}
             employeeCode={employeeCode}
-            organizationName={organizationName}
-            qrSrc={qrSrc}
+            dateJoined={dateJoined}
+            phone={phone}
+            email={email}
+            logoSrc={LOGO_URL}
             photoSrc={photoSrc}
+            footer={footer}
           />
-        </div>
+        </PreviewSide>
+
+        <PreviewSide scale={scale} label="Back">
+          <IdCardBack qrSrc={qrSrc} logoSrc={LOGO_URL} footer={footer} />
+        </PreviewSide>
       </div>
 
       {generatedAt ? (
@@ -132,13 +143,21 @@ export function IDCardPreview({
 
       <div className="flex flex-wrap gap-2">
         {cardImageUrl && (
-          <a
-            href={cardImageUrl}
-            download={`id-card-${employeeCode ?? employeeId}.png`}
-            className="rounded-lg border border-border-subtle px-4 py-2 text-sm font-medium text-brand-slate transition-colors hover:border-brand-gold"
-          >
-            Download card
-          </a>
+          <>
+            <a
+              href={`/api/employees/${employeeId}/id-card/pdf`}
+              className="rounded-lg bg-brand-gold px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-orange"
+            >
+              Download PDF
+            </a>
+            <a
+              href={cardImageUrl}
+              download={`id-card-${employeeCode ?? employeeId}.png`}
+              className="rounded-lg border border-border-subtle px-4 py-2 text-sm font-medium text-brand-slate transition-colors hover:border-brand-gold"
+            >
+              Download front (PNG)
+            </a>
+          </>
         )}
 
         <WhatsAppShareButton
@@ -152,7 +171,7 @@ export function IDCardPreview({
           <button
             onClick={generate}
             disabled={busy !== null}
-            className="rounded-lg bg-brand-gold px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-orange disabled:opacity-60"
+            className="rounded-lg border border-border-subtle px-4 py-2 text-sm font-medium text-brand-slate transition-colors hover:border-brand-gold disabled:opacity-60"
           >
             {busy === 'generate' ? 'Generating…' : cardImageUrl ? 'Regenerate' : 'Generate card'}
           </button>
@@ -178,6 +197,38 @@ export function IDCardPreview({
 
       {error && <p className="text-xs text-status-danger">⚠ {error}</p>}
       {notice && <p className="text-xs text-status-success">✓ {notice}</p>}
+    </div>
+  )
+}
+
+/** One scaled card side with a small caption. */
+function PreviewSide({
+  scale,
+  label,
+  children,
+}: {
+  scale: number
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div
+        className="relative overflow-hidden rounded-2xl border border-border-subtle"
+        style={{ width: CARD_WIDTH * scale, height: CARD_HEIGHT * scale }}
+      >
+        <div
+          style={{
+            width: CARD_WIDTH,
+            height: CARD_HEIGHT,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          {children}
+        </div>
+      </div>
+      <p className="text-center text-xs font-medium text-text-muted">{label}</p>
     </div>
   )
 }

@@ -1,7 +1,6 @@
 import { requireUser } from '@/lib/auth/guards'
 import { listOwnAttendance } from '@/lib/services/hr'
 import { Card, CardHeader, Badge, EmptyState } from '@/components/ui/primitives'
-import { CheckInWidget } from '@/components/hr/CheckInWidget'
 import {
   ATTENDANCE_STATUS_LABELS,
   ATTENDANCE_STATUS_STYLES,
@@ -12,32 +11,24 @@ import {
 export const dynamic = 'force-dynamic'
 
 /**
- * The signed-in employee's own attendance — the daily check-in surface, open to the
- * whole company. RLS returns only this employee's rows; the service resolves them from
- * the session user passed in.
+ * The signed-in employee's own attendance — READ-ONLY. Employees no longer check in/out from
+ * their dashboard: attendance is marked at the QR kiosk with the employee's allotted card (the
+ * QR Attendance panel, built separately). This page shows only the resulting history; RLS
+ * returns only this employee's rows, resolved from the session user passed in.
  */
 export default async function MyAttendancePage() {
   const user = await requireUser()
   const records = await listOwnAttendance(user)
-
-  const today = new Date().toISOString().slice(0, 10)
-  const todayRow = records.find((r) => r.date === today) ?? null
 
   return (
     <div className="space-y-6 p-6">
       <header>
         <h1 className="text-2xl font-semibold text-brand-slate">My Attendance</h1>
         <p className="mt-1 text-sm text-text-muted">
-          Check in when your day starts and out when it ends. Your recent history is below.
+          Attendance is marked by scanning your allotted QR card at the attendance kiosk. Your
+          recent history is below.
         </p>
       </header>
-
-      <Card className="px-5 py-4">
-        <CheckInWidget
-          checkedInAt={todayRow?.check_in ?? null}
-          checkedOutAt={todayRow?.check_out ?? null}
-        />
-      </Card>
 
       <Card>
         <CardHeader title="Recent days" subtitle="Last 60 days" />

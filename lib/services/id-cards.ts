@@ -101,6 +101,11 @@ export interface EmployeeCardData {
   organizationName: string
   profilePhotoPath: string | null
   token: string
+  // Front-of-card detail block + shared footer (0023).
+  dateJoined: string | null
+  phone: string | null
+  email: string | null
+  footer: { address: string | null; phone: string | null; email: string | null }
 }
 
 /**
@@ -115,7 +120,7 @@ export async function collectCardData(
   const { data: emp, error } = await service
     .from('employees')
     .select(
-      'id, designation, employee_code, profile_photo_path, user:users!employees_user_id_fkey(full_name, organization_id, organizations(name), departments(name))'
+      'id, designation, employee_code, date_joined, profile_photo_path, user:users!employees_user_id_fkey(full_name, email, phone, organization_id, organizations(name), departments(name))'
     )
     .eq('id', employeeId)
     .maybeSingle()
@@ -123,12 +128,32 @@ export async function collectCardData(
 
   const userRow = emp.user as unknown as {
     full_name: string
+    email: string | null
+    phone: string | null
     organization_id: string
     organizations: { name: string } | null
     departments: { name: string } | null
   } | null
 
   const { token } = await ensureActiveToken(service, employeeId)
+
+  // The card footer — the org's one company_details row, if set. A missing row
+  // means a blank footer, never a failed render.
+  let footer = { address: null as string | null, phone: null as string | null, email: null as string | null }
+  if (userRow?.organization_id) {
+    const { data: details } = await service
+      .from('company_details')
+      .select('address, phone, email')
+      .eq('organization_id', userRow.organization_id)
+      .maybeSingle()
+    if (details) {
+      footer = {
+        address: details.address ?? null,
+        phone: details.phone ?? null,
+        email: details.email ?? null,
+      }
+    }
+  }
 
   return {
     employeeId,
@@ -139,32 +164,54 @@ export async function collectCardData(
     organizationName: userRow?.organizations?.name ?? 'Solar Pulse',
     profilePhotoPath: emp.profile_photo_path ?? null,
     token,
+    dateJoined: emp.date_joined ?? null,
+    phone: userRow?.phone ?? null,
+    email: userRow?.email ?? null,
+    footer,
   }
 }
 
+export interface StoredCardPaths {
+  frontPath: string
+  backPath: string
+}
+
 /**
- * Stores a rendered card PNG in hr-documents at '{employee_id}/id-card-{n}.png' (org access is
- * enforced by the employee-id-first path, same as every HR object) and stamps the employees row.
- * The path is timestamped so a regeneration does not fight browser/CDN caching of the old image.
+ * Stores the two rendered card PNGs (front + back) in hr-documents under
+ * '{employee_id}/id-card-{front|back}-{n}.png' (org access is enforced by the
+ * employee-id-first path, same as every HR object) and stamps the employees row.
+ * The paths are timestamped so a regeneration does not fight browser/CDN caching of
+ * the old images. Front → id_card_file_path, back → id_card_back_file_path.
  */
-export async function storeCardImage(
+export async function storeCardImages(
   service: ReturnType<typeof createSupabaseServiceClient>,
   employeeId: string,
-  png: Buffer
-): Promise<string> {
-  const path = `${employeeId}/id-card-${Date.now()}.png`
-  const { error: uploadError } = await service.storage
-    .from(HR_DOCUMENTS_BUCKET)
-    .upload(path, png, { contentType: 'image/png', upsert: true })
-  if (uploadError) throw new ServiceError(uploadError.message, 400)
+  front: Buffer,
+  back: Buffer
+): Promise<StoredCardPaths> {
+  const stamp = Date.now()
+  const frontPath = `${employeeId}/id-card-front-${stamp}.png`
+  const backPath = `${employeeId}/id-card-back-${stamp}.png`
+
+  const bucket = service.storage.from(HR_DOCUMENTS_BUCKET)
+  const [frontUpload, backUpload] = await Promise.all([
+    bucket.upload(frontPath, front, { contentType: 'image/png', upsert: true }),
+    bucket.upload(backPath, back, { contentType: 'image/png', upsert: true }),
+  ])
+  if (frontUpload.error) throw new ServiceError(frontUpload.error.message, 400)
+  if (backUpload.error) throw new ServiceError(backUpload.error.message, 400)
 
   const { error: updateError } = await service
     .from('employees')
-    .update({ id_card_file_path: path, id_card_generated_at: new Date().toISOString() })
+    .update({
+      id_card_file_path: frontPath,
+      id_card_back_file_path: backPath,
+      id_card_generated_at: new Date().toISOString(),
+    })
     .eq('id', employeeId)
   if (updateError) throw new ServiceError(updateError.message, 400)
 
-  return path
+  return { frontPath, backPath }
 }
 
 /**

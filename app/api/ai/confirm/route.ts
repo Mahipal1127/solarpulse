@@ -70,24 +70,15 @@ export async function POST(req: NextRequest) {
         )
       }
 
-      let assigneeId: string | null = null
-      if (payload.assignee_name) {
-        const { data: assigneeRow } = await supabase
-          .from('users')
-          .select('id')
-          .eq('organization_id', user.organization_id)
-          .ilike('full_name', payload.assignee_name)
-          .maybeSingle()
-        assigneeId = assigneeRow?.id ?? null
-      }
-
+      // The CEO — including through the AI — assigns to a DEPARTMENT only. Any
+      // assignee_name the model parsed is ignored: naming a person is the
+      // department manager's job, done later via the delegation inbox.
       const task = await createTask(
         user,
         {
           title: payload.title ?? 'AI-created task',
           description: payload.description ?? null,
           assigned_department_id: deptRow.id,
-          assigned_user_id: assigneeId,
           priority: (payload.priority as TaskPriority) ?? 'medium',
           due_date: payload.due_date ?? null,
         },

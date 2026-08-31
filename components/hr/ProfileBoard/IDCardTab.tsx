@@ -6,6 +6,7 @@ import { collectCardData } from '@/lib/services/id-cards'
 import { tokenToQrDataUri } from '@/lib/services/qr'
 import { createSupabaseServiceClient } from '@/lib/supabase/server'
 import { signHrObject } from '@/lib/hr/profile'
+import { formatDate } from '@/lib/format'
 import type { EmployeeProfile } from '@/lib/hr/profile'
 
 /**
@@ -36,6 +37,7 @@ export async function IDCardTab({
   if (canManage) {
     // Fetch/mint the token and render its QR for the live preview. collectCardData reuses the
     // existing active token (it does not rotate), so merely viewing the board never changes a card.
+    // It also carries the front detail fields and the shared company footer.
     const service = createSupabaseServiceClient()
     const data = await collectCardData(service, profile.employeeId)
     const qrSrc = await tokenToQrDataUri(data.token)
@@ -45,11 +47,14 @@ export async function IDCardTab({
         employeeId={profile.employeeId}
         fullName={profile.fullName}
         designation={profile.designation}
-        departmentName={profile.departmentName}
         employeeCode={profile.employeeCode}
+        dateJoined={data.dateJoined ? formatDate(data.dateJoined) : null}
+        phone={data.phone}
+        email={data.email}
         organizationName={organizationName}
         qrSrc={qrSrc}
         photoSrc={photoUrl}
+        footer={data.footer}
         cardImageUrl={cardImageUrl}
         generatedAt={profile.idCardGeneratedAt}
         canManage
@@ -77,11 +82,17 @@ export async function IDCardTab({
       />
       <div className="flex flex-wrap gap-2">
         <a
+          href={`/api/employees/${profile.employeeId}/id-card/pdf`}
+          className="rounded-lg bg-brand-gold px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-orange"
+        >
+          Download PDF
+        </a>
+        <a
           href={cardImageUrl}
           download={`id-card-${profile.employeeCode ?? profile.employeeId}.png`}
           className="rounded-lg border border-border-subtle px-4 py-2 text-sm font-medium text-brand-slate transition-colors hover:border-brand-gold"
         >
-          Download card
+          Download front (PNG)
         </a>
         <WhatsAppShareButton
           fullName={profile.fullName}

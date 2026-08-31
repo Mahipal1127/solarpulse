@@ -4,6 +4,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { generateTempPassword } from '@/lib/passwords'
 import { CredentialHandover } from '@/components/hr/CredentialHandover'
+import { EMPLOYEE_DOCUMENT_TYPES } from '@/lib/hr/constants'
+import { EMPLOYEE_DOCUMENT_TYPE_LABELS } from '@/lib/format'
+import type { EmployeeDocumentType } from '@/lib/types'
 
 const inputClass =
   'w-full rounded-lg border border-border-subtle px-3 py-2 text-sm outline-none focus:border-brand-gold'
@@ -14,7 +17,19 @@ const labelClass = 'mb-1 block text-xs font-semibold uppercase tracking-wide tex
 const ALLOWED_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
-type Step = 1 | 2 | 3
+// Onboarding documents: PDFs or images, capped at MAX_UPLOAD_BYTES (20MB). Fast-fail only;
+// the server re-checks the decoded bytes.
+const ALLOWED_DOC_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
+const MAX_DOC_BYTES = 20 * 1024 * 1024
+
+/** One document the wizard has read to a data URI, ready to send inline with the form. */
+type PendingDoc = {
+  document_type: EmployeeDocumentType
+  file_name: string
+  file_data: string
+}
+
+type Step = 1 | 2 | 3 | 4
 
 /**
  * Multi-step onboarding wizard (HR lead / CEO). Gathers the employee's details, an optional profile
@@ -30,27 +45,37 @@ type Step = 1 | 2 | 3
 export function OnboardingWizard({
   roles,
   users,
+  prefill,
 }: {
   roles: { id: string; name: string; department_name: string | null }[]
   users: { id: string; full_name: string }[]
+  /** Optional details carried over from a hired candidate's "Onboard" shortcut. */
+  prefill?: { fullName?: string; email?: string; phone?: string; designation?: string }
 }) {
   const router = useRouter()
   const [step, setStep] = useState<Step>(1)
 
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
+  const [fullName, setFullName] = useState(prefill?.fullName ?? '')
+  const [email, setEmail] = useState(prefill?.email ?? '')
   const [password, setPassword] = useState('')
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(prefill?.phone ?? '')
   const [whatsapp, setWhatsapp] = useState('')
   const [roleId, setRoleId] = useState('')
-  const [designation, setDesignation] = useState('')
+  const [designation, setDesignation] = useState(prefill?.designation ?? '')
   const [employeeCode, setEmployeeCode] = useState('')
   const [dateJoined, setDateJoined] = useState('')
   const [reportingTo, setReportingTo] = useState('')
   const [emergency, setEmergency] = useState('')
+  // Optional starting salary. When set, the server creates the first payroll record and notifies
+  // Finance to arrange disbursement (the amount stays with HR/CEO). Kept as a string for the input;
+  // parsed to a number on submit.
+  const [baseSalary, setBaseSalary] = useState('')
 
   const [photoData, setPhotoData] = useState<string | null>(null)
   const [photoName, setPhotoName] = useState<string | null>(null)
+
+  const [docs, setDocs] = useState<PendingDoc[]>([])
+  const [docType, setDocType] = useState<EmployeeDocumentType>('id_proof')
 
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,6 +135,33 @@ export function OnboardingWizard({
     reader.readAsDataURL(file)
   }
 
+  function onDocChange(file: File | null) {
+    setError(null)
+    if (!file) return
+    if (!ALLOWED_DOC_TYPES.includes(file.type)) {
+      setError('Document must be a PDF, PNG, JPEG, or WebP.')
+      return
+    }
+    if (file.size > MAX_DOC_BYTES) {
+      setError('Document must be 20MB or smaller.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return
+      setDocs((prev) => [
+        ...prev,
+        { document_type: docType, file_name: file.name, file_data: reader.result as string },
+      ])
+    }
+    reader.onerror = () => setError('Could not read that file. Try another.')
+    reader.readAsDataURL(file)
+  }
+
+  function removeDoc(index: number) {
+    setDocs((prev) => prev.filter((_, i) => i !== index))
+  }
+
   async function submit() {
     setPending(true)
     setError(null)
@@ -130,6 +182,9 @@ export function OnboardingWizard({
         reporting_to: reportingTo || null,
         emergency_contact: emergency.trim() || null,
         profile_photo: photoData,
+        documents: docs.length > 0 ? docs : undefined,
+        // Omit entirely when blank so the schema's optional applies; a number otherwise.
+        base_salary: baseSalary.trim() ? Number(baseSalary) : undefined,
       }),
     })
 
@@ -244,6 +299,19 @@ export function OnboardingWizard({
                 ))}
               </select>
             </Field>
+            <Field id="w-salary" label="Starting salary (optional)">
+              <input
+                id="w-salary"
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                value={baseSalary}
+                onChange={(e) => setBaseSalary(e.target.value)}
+                placeholder="Monthly base — visible to HR/CEO only"
+                className={inputClass}
+              />
+            </Field>
             <div className="sm:col-span-2">
               <Field id="w-emergency" label="Emergency contact">
                 <input id="w-emergency" value={emergency} onChange={(e) => setEmergency(e.target.value)} className={inputClass} />
@@ -306,13 +374,103 @@ export function OnboardingWizard({
               onClick={() => setStep(3)}
               className="rounded-lg bg-brand-gold px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-orange"
             >
-              Next: review
+              Next: documents
             </button>
           </div>
         </div>
       )}
 
       {step === 3 && (
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm text-text-muted">
+              Attach the new hire&apos;s paperwork — ID proof, address proof, offer letter, and so
+              on. Optional; you can also add these later from the profile board.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label htmlFor="w-doctype" className={labelClass}>
+                Document type
+              </label>
+              <select
+                id="w-doctype"
+                value={docType}
+                onChange={(e) => setDocType(e.target.value as EmployeeDocumentType)}
+                className={inputClass}
+              >
+                {EMPLOYEE_DOCUMENT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {EMPLOYEE_DOCUMENT_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="w-docfile" className={labelClass}>
+                File (PDF or image)
+              </label>
+              {/* Reset value after each pick so choosing the same filename twice still fires. */}
+              <input
+                id="w-docfile"
+                type="file"
+                accept="application/pdf,image/png,image/jpeg,image/webp"
+                onChange={(e) => {
+                  onDocChange(e.target.files?.[0] ?? null)
+                  e.target.value = ''
+                }}
+                className="text-sm"
+              />
+            </div>
+          </div>
+
+          {docs.length > 0 && (
+            <ul className="divide-y divide-border-subtle rounded-lg border border-border-subtle">
+              {docs.map((d, i) => (
+                <li key={`${d.file_name}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-brand-slate">{d.file_name}</p>
+                    <p className="text-xs text-text-muted">
+                      {EMPLOYEE_DOCUMENT_TYPE_LABELS[d.document_type]}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeDoc(i)}
+                    className="shrink-0 rounded-lg border border-border-subtle px-2.5 py-1 text-xs font-medium text-status-danger transition-colors hover:bg-status-danger/5"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="text-xs text-text-muted">
+            PDF, PNG, JPEG, or WebP up to 20MB each.
+          </p>
+
+          {error && <p className="text-xs text-status-danger">⚠ {error}</p>}
+
+          <div className="flex justify-between">
+            <button
+              onClick={() => setStep(2)}
+              className="rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium text-brand-slate transition-colors hover:border-brand-gold"
+            >
+              Back
+            </button>
+            <button
+              onClick={() => setStep(4)}
+              className="rounded-lg bg-brand-gold px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-orange"
+            >
+              Next: review
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 4 && (
         <div className="space-y-4">
           <div className="rounded-lg border border-border-subtle bg-surface-bg px-4 py-3 text-sm">
             <Review label="Name" value={fullName} />
@@ -323,6 +481,18 @@ export function OnboardingWizard({
             <Review label="Employee code" value={employeeCode || '—'} />
             <Review label="WhatsApp" value={whatsapp || '—'} />
             <Review label="Photo" value={photoName ?? 'None (initials on card)'} />
+            <Review
+              label="Documents"
+              value={docs.length === 0 ? 'None' : `${docs.length} attached`}
+            />
+            <Review
+              label="Starting salary"
+              value={
+                baseSalary.trim()
+                  ? `${baseSalary.trim()} — payroll record + Finance notified`
+                  : 'Not set (add later on payroll)'
+              }
+            />
           </div>
 
           <p className="text-xs text-text-muted">
@@ -335,7 +505,7 @@ export function OnboardingWizard({
 
           <div className="flex justify-between">
             <button
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               disabled={pending}
               className="rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium text-brand-slate transition-colors hover:border-brand-gold disabled:opacity-60"
             >
@@ -356,7 +526,7 @@ export function OnboardingWizard({
 }
 
 function Stepper({ step }: { step: Step }) {
-  const labels = ['Details', 'Photo', 'Review']
+  const labels = ['Details', 'Photo', 'Documents', 'Review']
   return (
     <div className="flex items-center gap-2">
       {labels.map((label, i) => {

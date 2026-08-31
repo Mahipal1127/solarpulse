@@ -44,6 +44,8 @@ import type {
   AttendanceStatus,
   LeaveType,
   LeaveStatus,
+  ApplicationRecipient,
+  ApplicationStatus,
   SalaryStatus,
   KpiStatus,
   InvoiceType,
@@ -1496,6 +1498,24 @@ export const LEAVE_STATUS_STYLES: Record<LeaveStatus, string> = {
   pending: 'badge-warning',
   approved: 'badge-success',
   rejected: 'badge-danger',
+}
+
+export const APPLICATION_RECIPIENT_LABELS: Record<ApplicationRecipient, string> = {
+  hr: 'HR',
+  ceo: 'CEO',
+  both: 'HR & CEO',
+}
+
+export const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  submitted: 'Submitted',
+  acknowledged: 'Acknowledged',
+  closed: 'Closed',
+}
+
+export const APPLICATION_STATUS_STYLES: Record<ApplicationStatus, string> = {
+  submitted: 'badge-warning',
+  acknowledged: 'badge-info',
+  closed: 'badge-success',
 }
 
 export const SALARY_STATUS_LABELS: Record<SalaryStatus, string> = {

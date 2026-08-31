@@ -1033,6 +1033,12 @@ export type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'on_leave' | 
 export type LeaveType = 'casual' | 'sick' | 'earned' | 'unpaid'
 export type LeaveStatus = 'pending' | 'approved' | 'rejected'
 
+// A free-text application an employee writes to management. Distinct from leave,
+// which has its own table + approvals flow. Recipient decides who sees it; status
+// is a lightweight lifecycle the addressed side advances (not an approvals decision).
+export type ApplicationRecipient = 'hr' | 'ceo' | 'both'
+export type ApplicationStatus = 'submitted' | 'acknowledged' | 'closed'
+
 export type SalaryStatus = 'draft' | 'finalized' | 'paid'
 
 export type KpiStatus = 'in_progress' | 'met' | 'not_met'
@@ -1054,10 +1060,27 @@ export interface Employee {
   profile_photo_path: string | null
   id_card_generated_at: string | null
   id_card_file_path: string | null
+  // The two-sided card (0023): id_card_file_path holds the FRONT, this the BACK.
+  // The downloadable PDF is stitched on demand from the two, never stored.
+  id_card_back_file_path: string | null
   whatsapp_number: string | null
   must_change_password: boolean
   created_at: string
   updated_at: string
+}
+
+/**
+ * The company contact footer printed on every ID card (0023). One row per
+ * organization, editable by the CEO / HR lead in settings. Every field is nullable
+ * — a blank card footer is better than a card that will not render.
+ */
+export interface CompanyDetails {
+  organization_id: string
+  address: string | null
+  phone: string | null
+  email: string | null
+  updated_at: string
+  updated_by: string | null
 }
 
 export interface Candidate {
@@ -1131,6 +1154,19 @@ export interface LeaveRequest {
   approval_id: string | null
   approved_by: string | null
   approved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Application {
+  id: string
+  employee_id: string
+  recipient: ApplicationRecipient
+  subject: string
+  body: string
+  status: ApplicationStatus
+  handled_by: string | null
+  handled_at: string | null
   created_at: string
   updated_at: string
 }

@@ -18,10 +18,10 @@ import type {
   UpdateInterviewInput,
   CreateEmployeeInput,
   OnboardEmployeeInput,
+  OnboardingDocumentInput,
   UpdateEmployeeInput,
   ProcessExitInput,
   CreateEmployeeDocumentInput,
-  MarkAttendanceInput,
   SubmitLeaveInput,
   CreateSalaryRecordInput,
   UpdateSalaryRecordInput,
@@ -513,6 +513,35 @@ export async function onboardEmployee(
       }
     }
 
+    // Best-effort document uploads, same reasoning as the photo — the id (and its storage
+    // folder) exist now. The onboarding caller is already the HR lead / CEO (assertHrLead
+    // above), which is the tier allowed to file even sensitive documents, so no extra gate
+    // is needed here. A single failed document never rolls back a provisioned employee; HR
+    // can add or retry from the profile board.
+    let documentsStored = 0
+    for (const doc of input.documents ?? []) {
+      const stored = await storeOnboardingDocument(service, employee.id, user.id, doc)
+      if (stored) documentsStored += 1
+    }
+
+    // Optional starting salary. If the HR lead entered one, create the employee's first
+    // salary_records row so pay is captured at hire time rather than re-entered later, and hand
+    // Finance a task to set up the disbursement. Both are BEST-EFFORT for the same reason as the
+    // photo/documents above: a transient failure here must not ghost an already-provisioned login —
+    // HR can set salary from the payroll page and re-notify. See onboardStartingSalary for why the
+    // salary figure never reaches Finance (the compensation wall).
+    let salaryCreated = false
+    if (input.base_salary !== undefined && input.base_salary !== null) {
+      salaryCreated = await onboardStartingSalary(
+        service,
+        user,
+        employee.id,
+        input.full_name,
+        input.base_salary,
+        input.date_joined ?? null
+      )
+    }
+
     await logAction({
       organizationId: user.organization_id,
       userId: user.id,
@@ -524,6 +553,9 @@ export async function onboardEmployee(
         role_id: input.role_id,
         email: input.email,
         has_photo: Boolean(photoPath),
+        documents: documentsStored,
+        // Whether, not how much — the amount is never written to the audit trail.
+        salary_set: salaryCreated,
       },
     })
 
@@ -543,6 +575,134 @@ export async function onboardEmployee(
     }
     throw err
   }
+}
+
+/**
+ * Creates the new hire's first salary_records row and hands Finance a task to set up the
+ * disbursement. Called only from onboardEmployee, only when the HR lead entered a salary.
+ *
+ * THE COMPENSATION WALL. Finance cannot read salary_records — that is enforced by RLS (0015/0016)
+ * and deliberately never widened. So Finance is NOT told the amount here: instead it gets a plain
+ * department task ("Set up salary disbursement for {name}") that carries no figure. The task is
+ * something Finance can actually read (tasks RLS admits the assigned department), so it both
+ * notifies them and gives them an actionable item, while the number stays behind the wall — visible
+ * only to the CEO, the HR lead, and the employee themselves via the payroll surfaces.
+ *
+ * Runs on the SERVICE client (like the rest of onboardEmployee), so it bypasses RLS; the control is
+ * that onboardEmployee already gated on assertHrLead, which is exactly the salary sensitive tier.
+ * Best-effort and self-contained: any failure is logged and swallowed with a false return, never
+ * thrown — a hiccup here must not roll back an already-provisioned employee. Returns whether the
+ * salary row was created (the Finance task is a secondary notification, not part of the result).
+ */
+async function onboardStartingSalary(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  user: SessionUser,
+  employeeId: string,
+  employeeName: string,
+  baseSalary: number,
+  dateJoined: string | null
+): Promise<boolean> {
+  try {
+    // First of the joining month (or the current month when no join date was given), matching the
+    // unique(employee_id, effective_month) shape createSalaryRecord normalises to.
+    const basis = dateJoined ? new Date(dateJoined) : new Date()
+    const effectiveMonth = `${basis.toISOString().slice(0, 7)}-01`
+
+    const { data, error } = await service
+      .from('salary_records')
+      .insert({
+        employee_id: employeeId,
+        effective_month: effectiveMonth,
+        base_salary: baseSalary,
+        bonus: 0,
+        incentives: 0,
+        deductions: 0,
+        status: 'draft', // HR/CEO finalise it on the payroll page before it is ever paid.
+        processed_by: user.id,
+        // net_payable is a generated column — never sent.
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      console.error('[hr] onboarding salary insert failed', error.message)
+      return false
+    }
+
+    // The audit trail records THAT a starting salary was set, never the amount (mirrors
+    // createSalaryRecord, which logs via logSensitiveAccess without the figure).
+    await logSensitiveAccess(user.organization_id, user.id, 'salary_record', data.id, {
+      employee_id: employeeId,
+      effective_month: effectiveMonth,
+      action: 'salary_record_created',
+      via: 'onboarding',
+    })
+
+    // Notify Finance to set up the disbursement — a department task with NO amount (the wall).
+    await notifyFinanceOfNewSalary(service, user, employeeName)
+
+    return true
+  } catch (err) {
+    console.error('[hr] onboarding salary step failed', err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
+/**
+ * Files a Finance-department task asking them to set up the new hire's salary disbursement. No
+ * amount — see the wall note on onboardStartingSalary. Best-effort: if Finance has no department in
+ * this org, or the insert fails, we log and move on rather than failing the salary step. The task
+ * lands unclaimed (assigned_user_id null), the same shape every department task takes; a Finance
+ * member sees it in their queue and their header bell.
+ */
+async function notifyFinanceOfNewSalary(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  user: SessionUser,
+  employeeName: string
+): Promise<void> {
+  const { data: finance } = await service
+    .from('departments')
+    .select('id')
+    .eq('organization_id', user.organization_id)
+    .eq('slug', 'finance')
+    .maybeSingle()
+
+  if (!finance) {
+    console.error('[hr] no finance department to notify of new salary')
+    return
+  }
+
+  const { data: task, error } = await service
+    .from('tasks')
+    .insert({
+      organization_id: user.organization_id,
+      title: `Set up salary disbursement for ${employeeName}`,
+      description:
+        'A new employee was onboarded with a starting salary. Set up their monthly ' +
+        'disbursement. The salary amount is on the HR payroll record (visible to HR/CEO).',
+      created_by: user.id,
+      assigned_department_id: finance.id,
+      assigned_user_id: null,
+      priority: 'medium',
+      status: 'pending',
+      progress_percent: 0,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('[hr] finance salary-notify task failed', error.message)
+    return
+  }
+
+  await logAction({
+    organizationId: user.organization_id,
+    userId: user.id,
+    action: 'task.created',
+    entityType: 'task',
+    entityId: task.id,
+    metadata: { source: 'onboarding_salary', department_id: finance.id },
+  })
 }
 
 /**
@@ -569,6 +729,49 @@ async function uploadProfilePhoto(
     .upload(path, bytes, { contentType: `image/${match[1]}`, upsert: true })
   if (error) return null
   return path
+}
+
+/**
+ * Uploads one inline onboarding document to '{employee_id}/doc-{type}-{n}.{ext}' and records
+ * its employee_documents row. Best-effort: returns false on any failure (bad data URI,
+ * oversize, upload or insert error) without throwing, so one bad document never rolls back a
+ * provisioned employee. Mirrors uploadProfilePhoto — decode, bound the DECODED size against
+ * MAX_UPLOAD_BYTES, upload with the service client (the hr-documents bucket has no client-write
+ * policy), then insert. The gate is the caller's (assertHrLead in onboardEmployee).
+ */
+async function storeOnboardingDocument(
+  service: ReturnType<typeof createSupabaseServiceClient>,
+  employeeId: string,
+  uploadedBy: string,
+  doc: OnboardingDocumentInput
+): Promise<boolean> {
+  const match = /^data:(image\/(?:png|jpe?g|webp)|application\/pdf);base64,(.+)$/.exec(doc.file_data)
+  if (!match) return false
+  const mime = match[1]
+  const bytes = Buffer.from(match[2], 'base64')
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) return false
+
+  const ext = mime === 'application/pdf' ? 'pdf' : mime.slice('image/'.length).replace('jpeg', 'jpg')
+  const path = `${employeeId}/doc-${doc.document_type}-${Date.now()}.${ext}`
+
+  const { error: uploadError } = await service.storage
+    .from(HR_DOCUMENTS_BUCKET)
+    .upload(path, bytes, { contentType: mime, upsert: true })
+  if (uploadError) return false
+
+  const { error: rowError } = await service.from('employee_documents').insert({
+    employee_id: employeeId,
+    document_type: doc.document_type,
+    file_path: path,
+    file_name: doc.file_name,
+    uploaded_by: uploadedBy,
+  })
+  if (rowError) {
+    // Row failed — remove the orphaned object so storage does not accrue unreferenced files.
+    await service.storage.from(HR_DOCUMENTS_BUCKET).remove([path]).catch(() => {})
+    return false
+  }
+  return true
 }
 
 export async function updateEmployee(
@@ -753,143 +956,14 @@ export async function signDocumentDownload(
 // Attendance
 // ===========================================================================
 
-/**
- * Self check-in for the signed-in employee — the company-wide daily surface, reachable
- * by every active user regardless of department. Stamps check_in = now() server-side
- * (never a client-chosen time) and creates today's row if absent. Idempotent-ish: a
- * second check-in the same day is rejected rather than overwriting the first.
- */
-export async function selfCheckIn(user: SessionUser): Promise<AttendanceRecord> {
-  const supabase = await createSupabaseServerClient()
-  const employeeId = await ownEmployeeId(supabase, user)
-  if (!employeeId) throw new ServiceError('No employee record for your account', 400)
-
-  const today = new Date().toISOString().slice(0, 10)
-  const now = new Date().toISOString()
-
-  const { data: existing } = await supabase
-    .from('attendance_records')
-    .select('id, check_in')
-    .eq('employee_id', employeeId)
-    .eq('date', today)
-    .maybeSingle()
-
-  if (existing?.check_in) {
-    throw new ServiceError('You have already checked in today', 400)
-  }
-
-  let record: AttendanceRecord
-  if (existing) {
-    const { data, error } = await supabase
-      .from('attendance_records')
-      .update({ check_in: now, status: 'present' })
-      .eq('id', existing.id)
-      .select()
-      .single()
-    if (error) throw new ServiceError(error.message, 400)
-    record = data as AttendanceRecord
-  } else {
-    const { data, error } = await supabase
-      .from('attendance_records')
-      .insert({ employee_id: employeeId, date: today, check_in: now, status: 'present' })
-      .select()
-      .single()
-    if (error) throw new ServiceError(error.message, 400)
-    record = data as AttendanceRecord
-  }
-
-  await logAction({
-    organizationId: user.organization_id,
-    userId: user.id,
-    action: 'attendance_check_in',
-    entityType: 'attendance_record',
-    entityId: record.id,
-    metadata: { date: today },
-  })
-
-  return record
-}
-
-/** Self check-out — stamps check_out = now() on today's row. Requires a prior check-in. */
-export async function selfCheckOut(user: SessionUser): Promise<AttendanceRecord> {
-  const supabase = await createSupabaseServerClient()
-  const employeeId = await ownEmployeeId(supabase, user)
-  if (!employeeId) throw new ServiceError('No employee record for your account', 400)
-
-  const today = new Date().toISOString().slice(0, 10)
-
-  const { data: existing } = await supabase
-    .from('attendance_records')
-    .select('id, check_in, check_out')
-    .eq('employee_id', employeeId)
-    .eq('date', today)
-    .maybeSingle()
-
-  if (!existing?.check_in) throw new ServiceError('Check in before checking out', 400)
-  if (existing.check_out) throw new ServiceError('You have already checked out today', 400)
-
-  const { data, error } = await supabase
-    .from('attendance_records')
-    .update({ check_out: new Date().toISOString() })
-    .eq('id', existing.id)
-    .select()
-    .single()
-  if (error) throw new ServiceError(error.message, 400)
-
-  await logAction({
-    organizationId: user.organization_id,
-    userId: user.id,
-    action: 'attendance_check_out',
-    entityType: 'attendance_record',
-    entityId: existing.id,
-    metadata: { date: today },
-  })
-
-  return data as AttendanceRecord
-}
-
-/**
- * HR marks (or corrects) attendance for an employee — for field staff who could not
- * self-check-in, or to record absence/leave/holiday. marked_by is stamped to the acting
- * HR user, distinguishing it from a self-marked row. Upserts on (employee_id, date).
- */
-export async function markAttendance(
-  user: SessionUser,
-  input: MarkAttendanceInput
-): Promise<AttendanceRecord> {
-  assertHrCanWrite(user)
-  const supabase = await createSupabaseServerClient()
-  await assertEmployeeInOrg(supabase, user, input.employee_id)
-
-  const { data, error } = await supabase
-    .from('attendance_records')
-    .upsert(
-      {
-        employee_id: input.employee_id,
-        date: input.date,
-        status: input.status,
-        check_in: input.check_in ?? null,
-        check_out: input.check_out ?? null,
-        marked_by: user.id,
-      },
-      { onConflict: 'employee_id,date' }
-    )
-    .select()
-    .single()
-
-  if (error) throw new ServiceError(error.message, 400)
-
-  await logAction({
-    organizationId: user.organization_id,
-    userId: user.id,
-    action: 'attendance_marked',
-    entityType: 'attendance_record',
-    entityId: data.id,
-    metadata: { employee_id: input.employee_id, date: input.date, status: input.status },
-  })
-
-  return data as AttendanceRecord
-}
+// Attendance is WRITTEN in exactly ONE place: the QR attendance kiosk (built separately),
+// which resolves an employee's allotted card via /api/qr/resolve and stamps their in/out
+// through its own endpoint. Nothing in the app marks attendance from a personal dashboard
+// any more — the former selfCheckIn/selfCheckOut writers and their /api/attendance/check-*
+// routes were removed, so /me/attendance is now read-only history (listOwnAttendance).
+//
+// HR is likewise READ-ONLY here (see /hr/attendance): the former markAttendance() writer was
+// removed with 0024, which also narrowed HR's grant on attendance_records to FOR SELECT.
 
 // ===========================================================================
 // Leave

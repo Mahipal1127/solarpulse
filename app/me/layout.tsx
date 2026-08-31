@@ -36,8 +36,8 @@ export default async function MeLayout({ children }: { children: React.ReactNode
           <Link href="/me/attendance" className="text-text-muted hover:text-brand-gold">
             Attendance
           </Link>
-          <Link href="/me/leave" className="text-text-muted hover:text-brand-gold">
-            Leave
+          <Link href="/me/applications" className="text-text-muted hover:text-brand-gold">
+            Applications
           </Link>
           <Link href="/me/payslips" className="text-text-muted hover:text-brand-gold">
             Payslips
