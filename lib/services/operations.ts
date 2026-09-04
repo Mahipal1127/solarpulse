@@ -40,7 +40,6 @@ import type {
 } from '@/lib/validation/schemas'
 import type {
   Installation,
-  InstallationStatus,
   InstallationTeamMember,
   InstallationProgressUpdate,
   InstallationPhoto,
@@ -52,7 +51,6 @@ import type {
   ServiceReport,
   AmcContract,
   AmcVisit,
-  AmcVisitStatus,
   PerformanceLog,
 } from '@/lib/types'
 

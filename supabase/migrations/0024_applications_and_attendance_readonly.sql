@@ -25,7 +25,7 @@
 -- 1. applications
 -- ---------------------------------------------------------------------------
 
-create table applications (
+create table if not exists applications (
   id           uuid primary key default gen_random_uuid(),
   employee_id  uuid not null references employees(id) on delete cascade,
   recipient    text not null,              -- 'hr' | 'ceo' | 'both'
@@ -38,10 +38,13 @@ create table applications (
   updated_at   timestamptz not null default now()
 );
 
-create index applications_employee_idx on applications (employee_id);
-create index applications_recipient_idx on applications (recipient);
-create index applications_status_idx on applications (status);
+create index if not exists applications_employee_idx on applications (employee_id);
+create index if not exists applications_recipient_idx on applications (recipient);
+create index if not exists applications_status_idx on applications (status);
 
+-- set_updated_at() ships in 0001. The trigger needs a drop-then-create pair because CREATE
+-- TRIGGER has no IF NOT EXISTS form in standard PostgreSQL.
+drop trigger if exists applications_set_updated_at on applications;
 create trigger applications_set_updated_at
   before update on applications
   for each row execute function set_updated_at();

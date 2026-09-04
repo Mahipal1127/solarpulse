@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -41,15 +41,18 @@ export function ModuleHeader({
   const menuRef = useRef<HTMLDivElement>(null)
 
   /**
-   * Time of day comes from the viewer's clock, not the server's, so it is
-   * resolved after mount — rendering it during SSR would greet someone in IST
-   * with "Good evening" at midday whenever the server runs in UTC. The neutral
-   * fallback below is what shows for the one frame before the effect runs.
+   * Time of day comes from the viewer's clock, not the server's, so it is resolved after mount —
+   * rendering it during SSR would greet someone in IST with "Good evening" at midday whenever the
+   * server runs in UTC. The neutral string below is what shows for the one frame before the effect
+   * runs, and during SSR. The effect mutates a ref's textContent rather than calling setState, so
+   * the React Compiler rule react-hooks/set-state-in-effect is satisfied without a re-render.
    */
-  const [greeting, setGreeting] = useState('Welcome back')
+  const greetingRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
+    if (!greetingRef.current) return
     const hour = new Date().getHours()
-    setGreeting(hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening')
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+    greetingRef.current.textContent = greeting
   }, [])
 
   // Dismiss on outside click or Escape. A menu that traps focus with no way out
@@ -90,7 +93,7 @@ export function ModuleHeader({
     <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b border-border-subtle bg-surface-card px-6 py-4">
       <div className="min-w-0">
         <h2 className="truncate text-lg font-semibold tracking-tight text-brand-slate">
-          {greeting}, {firstNameOf(fullName)}
+          <span ref={greetingRef}>Welcome back</span>, {firstNameOf(fullName)}
         </h2>
         <p className="mt-0.5 truncate text-xs text-text-muted">
           {subtitle ?? [departmentName, roleName].filter(Boolean).join(' · ')}

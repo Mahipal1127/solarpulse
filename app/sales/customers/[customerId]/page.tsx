@@ -27,7 +27,7 @@ type ClosureRow = DealClosure & { closer: { full_name: string } | null }
 export default async function CustomerDetailPage(
   props: PageProps<'/sales/customers/[customerId]'>
 ) {
-  const user = await requireDepartment(SALES_DEPARTMENT_SLUG)
+  await requireDepartment(SALES_DEPARTMENT_SLUG)
   const { customerId } = await props.params
 
   const supabase = await createSupabaseServerClient()

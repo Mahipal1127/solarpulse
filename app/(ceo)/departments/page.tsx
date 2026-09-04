@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireRole } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { Card, EmptyState, Badge } from '@/components/ui/primitives'
+import { Card, EmptyState } from '@/components/ui/primitives'
 import { formatDate } from '@/lib/format'
 import type { Department, DepartmentReport } from '@/lib/types'
 
@@ -56,7 +56,7 @@ export default async function DepartmentsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {departments.map((department, i) => {
+          {departments.map((department, _i) => {
             const report = latestByDepartment.get(department.id)
             const initials = department.name
               .split(' ')
