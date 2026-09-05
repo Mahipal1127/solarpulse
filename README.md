@@ -82,6 +82,14 @@ table so you can verify the wipe.
 
 **This is irreversible** — the audit log is wiped too. Take a backup first.
 
+## Re-seeding CEO + HR users after a manual wipe
+
+If you wiped the database by hand and need the two protected logins back, paste
+`supabase/reseed_ceo_and_hr.sql` into the SQL editor. It creates the auth.users rows
+for `ceo@solarpulse.in` and `hr@solarpulse.in` with a known password (see the script
+header for the default and how to change it), confirms their emails, and wires both
+into the public schema via `provision_app_user()`. Idempotent — safe to re-run.
+
 ### 4. Run
 
 ```bash
