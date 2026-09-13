@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import jsQR from 'jsqr'
 import Link from 'next/link'
 import { ArrowLeft, Camera, CheckCircle2, Eye, EyeOff, FileUp, KeyRound } from 'lucide-react'
+import { decodeQrToken } from '@/lib/qr-decode'
 
 type Step = 'id' | 'scan' | 'password' | 'done'
 
@@ -21,42 +21,13 @@ const STEP_LABELS: Record<'id' | 'scan' | 'password', string> = {
 }
 
 // ---------------------------------------------------------------------------
-// QR decoding — jsQR, on every browser
+// QR decoding — the shared crop-ladder decoder (lib/qr-decode.ts)
 //
-// The camera loop and the photo upload both decode through jsQR: draw the frame
-// (video frame or uploaded image) onto a canvas, read the pixels back, and hand
-// them to the decoder. jsQR is pure JavaScript with no platform dependencies,
-// so scanning works identically on Chrome, Firefox and iOS Safari — the
-// browser's own BarcodeDetector API cannot be relied on (missing in Firefox and
-// iOS Safari), which is why this moved off it.
+// The camera loop and the photo upload both decode through jsQR with the
+// shared accuracy ladder: full frame first, then 80% and 60% center crops at
+// near-full resolution, with inverted-code attempts for glare. Same decoder
+// as the attendance kiosk, so the two surfaces read cards identically.
 // ---------------------------------------------------------------------------
-
-/** Longest edge of the decode canvas. Photos come in at 4000px+; the downscale
- *  is what keeps decode times acceptable on a phone. */
-const MAX_DECODE_EDGE = 960
-
-function readPixels(
-  canvas: HTMLCanvasElement,
-  source: CanvasImageSource,
-  sourceWidth: number,
-  sourceHeight: number
-): ImageData {
-  const scale = Math.min(1, MAX_DECODE_EDGE / Math.max(sourceWidth, sourceHeight))
-  canvas.width = Math.max(1, Math.round(sourceWidth * scale))
-  canvas.height = Math.max(1, Math.round(sourceHeight * scale))
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new Error('Canvas 2D context is unavailable in this browser.')
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return ctx.getImageData(0, 0, canvas.width, canvas.height)
-}
-
-/** Decodes a QR from any drawable source; null when no code is in the frame. */
-function decodeQr(source: CanvasImageSource, sourceWidth: number, sourceHeight: number): string | null {
-  const canvas = document.createElement('canvas')
-  const pixels = readPixels(canvas, source, sourceWidth, sourceHeight)
-  const code = jsQR(pixels.data, pixels.width, pixels.height)
-  return code?.data ?? null
-}
 
 /**
  * The self-service password reset wizard.
@@ -210,7 +181,7 @@ export function ResetPasswordWizard() {
       if (ready && performance.now() - lastDecodeAt > 120) {
         lastDecodeAt = performance.now()
         try {
-          const raw = decodeQr(video, video.videoWidth, video.videoHeight)
+          const raw = decodeQrToken(video, video.videoWidth, video.videoHeight)
           if (raw) {
             cancelled = true
             detectedRef.current(raw)
@@ -247,7 +218,7 @@ export function ResetPasswordWizard() {
       image.src = url
       await loaded
 
-      const raw = decodeQr(image, image.naturalWidth, image.naturalHeight)
+      const raw = decodeQrToken(image, image.naturalWidth, image.naturalHeight)
       URL.revokeObjectURL(url)
 
       if (!raw) {
