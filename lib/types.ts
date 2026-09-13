@@ -2,6 +2,39 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TaskStatus = 'pending' | 'in_progress' | 'delayed' | 'completed' | 'archived'
 export type ApprovalType = 'budget' | 'purchase' | 'leave' | 'expense'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
+
+export type DelegationAction = 'created' | 'subtask' | 'forwarded'
+
+/**
+ * One node of a task's delegation chain, as returned by getTaskFlow. Ordered by
+ * creation, so the array reads as the journey: the root first, then each
+ * sub-task or forwarded requirement in the order it was raised.
+ */
+export interface TaskFlowNode {
+  id: string
+  parent_task_id: string | null
+  root_task_id: string | null
+  title: string
+  description: string | null
+  status: TaskStatus
+  priority: TaskPriority
+  progress_percent: number
+  due_date: string | null
+  created_at: string
+  created_by: string
+  assigned_department_id: string
+  assigned_user_id: string | null
+  department_name: string | null
+  assignee_name: string | null
+  creator_name: string | null
+}
+
+export interface TaskFlow {
+  /** The chain's root task id — the top of the journey. */
+  rootId: string
+  /** Every visible node of the chain, ordered oldest first. */
+  nodes: TaskFlowNode[]
+}
 /**
  * Names the wire dialect the request is built in, not the company. `compatible` is
  * OpenAI's chat-completions format pointed at an operator-supplied host, which is

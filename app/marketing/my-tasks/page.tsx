@@ -2,14 +2,15 @@ import { requireDepartment } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { MARKETING_DEPARTMENT_SLUG } from '@/lib/services/marketing'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
+import { AwaitingDelegationSection } from '@/components/shared/AwaitingDelegationSection'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * A Marketing person's own task list — the same board every other module gets.
  * Filtered by assigned_user_id; RLS already restricts the rows. CEO tasks handed to
- * Marketing without a named owner stay on the dashboard's department tab for the lead
- * to delegate.
+ * Marketing without a named owner render for the lead in the delegation section above
+ * the board (they used to live on the dashboard's department tab alone).
  */
 export default async function MarketingMyTasksPage() {
   const user = await requireDepartment(MARKETING_DEPARTMENT_SLUG)
@@ -35,6 +36,8 @@ export default async function MarketingMyTasksPage() {
           them separately.
         </p>
       </header>
+
+      <AwaitingDelegationSection user={user} />
 
       <MyTaskBoard initialTasks={tasks} userId={user.id} />
     </div>

@@ -2,14 +2,15 @@ import { requireDepartment } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { STORE_DEPARTMENT_SLUG } from '@/lib/store/constants'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
+import { AwaitingDelegationSection } from '@/components/shared/AwaitingDelegationSection'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * A Store employee's own task list — the same board every other module gets. Filtered by
  * assigned_user_id; RLS restricts the rows further. Department-wide tasks the CEO gave Store
- * without naming anyone stay on the dashboard's delegation view, since handing those out is
- * the lead's job.
+ * without naming anyone render for the lead in the delegation section above the board (they
+ * used to live on the dashboard's delegation view alone) — handing those out is the lead's job.
  */
 export default async function StoreMyTasksPage() {
   const user = await requireDepartment(STORE_DEPARTMENT_SLUG)
@@ -35,6 +36,8 @@ export default async function StoreMyTasksPage() {
           them separately.
         </p>
       </header>
+
+      <AwaitingDelegationSection user={user} />
 
       <MyTaskBoard initialTasks={tasks} userId={user.id} />
     </div>

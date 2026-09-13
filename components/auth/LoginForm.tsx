@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -94,18 +95,14 @@ export function LoginForm() {
         )}
       </div>
 
-      {/* Forgot Password Link */}
+      {/* Forgot Password Link — the self-service reset (Employee ID + attendance QR card). */}
       <div className="flex justify-end pt-0.5 pb-2">
-        <a
-          href="#forgot-password"
-          onClick={(e) => {
-            e.preventDefault()
-            alert('Password reset link sent to registered administrator.')
-          }}
+        <Link
+          href="/reset-password"
           className="text-xs font-medium text-text-muted hover:text-brand-slate transition"
         >
           Forgot password?
-        </a>
+        </Link>
       </div>
 
       {serverError && (

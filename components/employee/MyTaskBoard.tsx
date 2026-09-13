@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Badge } from '@/components/ui/primitives'
+import { DelegateDialog, NewTaskDialog } from '@/components/shared/TaskDelegationDialogs'
 import {
   formatDate,
   isOverdue,
@@ -53,10 +55,16 @@ export function MyTaskBoard({
   const [tasks, setTasks] = useState<AssignedTask[]>(initialTasks)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [forms, setForms] = useState<Record<string, FormState>>({})
+  const [delegating, setDelegating] = useState<AssignedTask | null>(null)
+  const [creating, setCreating] = useState(false)
 
-  // Live updates: Supabase broadcasts the full new row on UPDATE so we can
-  // patch local state without a round-trip. RLS means we only receive rows
-  // assigned_user_id = auth.uid(), so the filter here is belt-and-suspenders.
+  /*
+   * Live updates: Supabase broadcasts the full new row on UPDATE so we can patch local
+   * state without a round-trip. The subscription filter matches the assignee's own rows
+   * (the ones this board can act on); an unclaimed task flipping to assigned arrives on
+   * the next page load, which is fine — delegation is a manager action, not something
+   * the assignee is staring at the board waiting for.
+   */
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
@@ -138,11 +146,24 @@ export function MyTaskBoard({
         <StatCard label="Overdue" value={stats.overdue} accent={stats.overdue > 0 ? 'text-status-danger' : undefined} />
       </div>
 
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-text-muted">
+          Raise a requirement or forward work onward — every move stays connected to its original task.
+        </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="shrink-0 rounded-lg bg-brand-gold px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-orange"
+        >
+          + New task
+        </button>
+      </div>
+
       {active.length === 0 ? (
         <div className="rounded-xl border border-border-subtle bg-white px-6 py-16 text-center">
           <p className="text-sm font-medium text-text-muted">No tasks assigned to you yet.</p>
           <p className="mt-1 text-xs text-text-muted/60">
-            The CEO assigns tasks through the CEO module — they will appear here.
+            The CEO assigns tasks through the CEO module — yours, and your department&apos;s
+            shared queue, will appear here.
           </p>
         </div>
       ) : (
@@ -155,15 +176,17 @@ export function MyTaskBoard({
             return (
               <div
                 key={task.id}
-                className={`overflow-hidden rounded-xl border bg-white shadow-sm transition-all ${
-                  over ? 'border-status-danger/25' : 'border-border-subtle'
-                }`}
+                className={`overflow-hidden rounded-xl border bg-white shadow-sm transition-all ${over ? 'border-status-danger/25' : 'border-border-subtle'
+                  }`}
               >
                 <div className="px-5 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-sm font-semibold text-brand-slate">{task.title}</h3>
+                        {task.assigned_user_id === null && (
+                          <Badge className="bg-surface-bg text-text-muted ring-border-subtle">Unassigned</Badge>
+                        )}
                         {over && (
                           <Badge className="bg-status-danger/10 text-status-danger ring-status-danger/30">Overdue</Badge>
                         )}
@@ -204,14 +227,40 @@ export function MyTaskBoard({
                       </div>
                     </div>
 
-                    {task.status !== 'completed' && (
-                      <button
-                        onClick={() => (isOpen ? setExpanded(null) : openForm(task))}
-                        className="shrink-0 rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-surface-bg"
+                    {/*
+                      Only the task's own assignee can progress it — updateTaskProgress
+                      rejects everyone else (403), so the control is hidden rather than
+                      left to fail. An unclaimed department task ("Unassigned") is shown
+                      read-only: delegation to a person is the manager's move, from the
+                      team tab.
+                    */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Link
+                        href={`/task-flow/${task.id}`}
+                        className="rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-surface-bg"
                       >
-                        {isOpen ? 'Cancel' : 'Update'}
-                      </button>
-                    )}
+                        Flow
+                      </Link>
+                      {task.status !== 'completed' && (
+                        <button
+                          onClick={() => setDelegating(task)}
+                          className="rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-surface-bg"
+                        >
+                          Delegate
+                        </button>
+                      )}
+                      {task.status !== 'completed' && task.assigned_user_id === userId && (
+                        <button
+                          onClick={() => (isOpen ? setExpanded(null) : openForm(task))}
+                          className="rounded-lg bg-brand-gold px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-brand-orange"
+                        >
+                          {isOpen ? 'Cancel' : 'Update'}
+                        </button>
+                      )}
+                      {task.status !== 'completed' && task.assigned_user_id !== userId && (
+                        <span className="text-xs text-text-muted/60">Awaiting delegation</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -312,6 +361,16 @@ export function MyTaskBoard({
           })}
         </div>
       )}
+
+      {delegating && (
+        <DelegateDialog
+          taskId={delegating.id}
+          taskTitle={delegating.title}
+          onClose={() => setDelegating(null)}
+        />
+      )}
+
+      {creating && <NewTaskDialog onClose={() => setCreating(false)} />}
     </div>
   )
 }

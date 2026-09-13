@@ -15,6 +15,7 @@ import {
 import { Card, CardHeader, StatCard, Badge, EmptyState } from '@/components/ui/primitives'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { formatCurrency, formatDate, daysOverdue } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
@@ -66,6 +67,8 @@ export default async function FinanceDashboardPage() {
           Billing, payments, and reconciliation across the company.
         </p>
       </header>
+
+      <PulseAIPanel user={user} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard

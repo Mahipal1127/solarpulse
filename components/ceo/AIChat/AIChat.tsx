@@ -72,12 +72,32 @@ export function AIChat({
   greeting,
   ready,
   notReadyReason,
+  suggestions = SUGGESTIONS,
+  proposalsEnabled = true,
+  onClose,
 }: {
   /** Rendered as-is. Computed on the server so the clock cannot differ between
    *  render passes and trip a hydration mismatch. */
   greeting: string
   ready: boolean
   notReadyReason?: string
+  /** Starter pills. Defaults to the CEO set; department dashboards pass their own
+   *  so a suggestion can never lead somewhere the context cannot answer. */
+  suggestions?: string[]
+  /**
+   * False on the department dashboards: there the assistant only answers. It hides
+   * the proposal footer, the proposal line in the empty state, and the
+   * /ai/settings shortcut — that page is CEO-only, and a link an employee cannot
+   * open is worse than no link. The CEO's own page keeps the default.
+   */
+  proposalsEnabled?: boolean
+  /**
+   * Renders an X in the header when provided — the floating Pulse AI pill passes
+   * its close handler here, because a window that floats above the dashboard needs
+   * to be dismissible from inside it. The CEO's full page omits it: there is no
+   * "closing" a page.
+   */
+  onClose?: () => void
 }) {
   const router = useRouter()
   const [messages, setMessages] = useState<Message[]>([])
@@ -365,18 +385,30 @@ export function AIChat({
           drift. Starting a fresh conversation is genuinely local to this surface, so it
           stays.
         */}
-        {!empty && (
-          <button
-            onClick={() => {
-              setMessages([])
-              setInput('')
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-surface-card hover:text-brand-slate"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New chat
-          </button>
-        )}
+        <span className="flex items-center gap-1.5">
+          {!empty && (
+            <button
+              onClick={() => {
+                setMessages([])
+                setInput('')
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-surface-card hover:text-brand-slate"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New chat
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Close Pulse AI"
+              title="Close"
+              className="inline-flex items-center justify-center rounded-lg p-1.5 text-text-muted transition-colors hover:bg-surface-card hover:text-brand-slate"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </span>
       </header>
 
       {empty ? (
@@ -400,7 +432,9 @@ export function AIChat({
               <p className="mt-3 text-sm text-text-muted">
                 {creditNotice ??
                   (ready
-                    ? 'Ask about tasks, approvals or departments. Request a change and it will be proposed for your confirmation first.'
+                    ? proposalsEnabled
+                      ? 'Ask about tasks, approvals or departments. Request a change and it will be proposed for your confirmation first.'
+                      : 'Ask about your tasks, your department, or anything your role can see.'
                     : notReadyReason)}
               </p>
             </div>
@@ -412,7 +446,7 @@ export function AIChat({
                 pills say less than the sentence above already said. */}
             {ready && !creditLimited && (
               <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((suggestion) => (
+                {suggestions.map((suggestion) => (
                   <button
                     key={suggestion}
                     onClick={() => send(suggestion)}
@@ -424,7 +458,7 @@ export function AIChat({
               </div>
             )}
 
-            {!ready && (
+            {!ready && proposalsEnabled && (
               <p className="mt-5 text-center text-xs text-text-muted">
                 <Link href="/ai/settings" className="font-medium text-brand-gold hover:underline">
                   Open settings
@@ -532,7 +566,9 @@ export function AIChat({
             <div className="mx-auto max-w-3xl">
               {composer}
               <p className="mt-2 text-center text-[11px] text-text-muted">
-                Changes are proposed for your confirmation. Nothing is written until you confirm.
+                {proposalsEnabled
+                  ? 'Changes are proposed for your confirmation. Nothing is written until you confirm.'
+                  : 'Pulse AI answers from what you can see. It suggests — you act in the module.'}
               </p>
             </div>
           </div>

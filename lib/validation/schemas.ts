@@ -64,6 +64,37 @@ export type UpdateTaskProgressInput = z.infer<typeof updateTaskProgressSchema>
 export type CreateTaskInput = z.infer<typeof createTaskSchema>
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>
 
+export const createSubTaskSchema = z
+  .object({
+    title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
+    description: z.string().trim().max(5000).optional().nullable(),
+    priority: taskPriority.optional(),
+    due_date: z.string().datetime().nullable().optional(),
+    assigned_department_id: z.string().uuid('Choose a department').optional(),
+    assigned_user_id: z.string().uuid().optional(),
+  })
+  .refine((v) => Boolean(v.assigned_department_id || v.assigned_user_id), {
+    message: 'Choose a department or a person to assign this to',
+  })
+
+/**
+ * Forwarding moves an existing open task to another employee or department.
+ * Note is optional free text the forwarder can attach — it lands in the task's
+ * own history as the handoff note.
+ */
+export const forwardTaskSchema = z
+  .object({
+    assigned_department_id: z.string().uuid('Choose a department').optional(),
+    assigned_user_id: z.string().uuid().optional(),
+    note: z.string().trim().max(2000).optional(),
+  })
+  .refine((v) => Boolean(v.assigned_department_id || v.assigned_user_id), {
+    message: 'Choose a department or a person to forward this to',
+  })
+
+export type CreateSubTaskInput = z.infer<typeof createSubTaskSchema>
+export type ForwardTaskInput = z.infer<typeof forwardTaskSchema>
+
 // ---------------------------------------------------------------------------
 // Sales module
 // ---------------------------------------------------------------------------
@@ -1425,6 +1456,34 @@ export const resolveTokenSchema = z.object({
   token: z.string().trim().min(16, 'Invalid token').max(256),
 })
 
+/**
+ * Self-service password reset, step 1 (verify): the Employee ID printed on the card ("ID No",
+ * employees.employee_code) plus the scanned attendance-QR token. The pair must resolve to the
+ * SAME active employee — the token alone identifies a card, the code binds it to a person.
+ * Bounded like resolveTokenSchema so a junk body is rejected before any DB lookup.
+ */
+export const passwordResetVerifySchema = z.object({
+  employee_code: z.string().trim().min(2, 'Enter your Employee ID').max(40),
+  token: z.string().trim().min(16, 'Invalid token').max(256),
+})
+
+/**
+ * Step 2 (confirm): the same pair again — the server re-verifies from scratch and never trusts
+ * the client's step-1 result — plus the new password. Same 8-char floor as changePasswordSchema,
+ * which this mirrors.
+ */
+export const passwordResetConfirmSchema = z
+  .object({
+    employee_code: z.string().trim().min(2, 'Enter your Employee ID').max(40),
+    token: z.string().trim().min(16, 'Invalid token').max(256),
+    password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, {
+    message: 'Passwords do not match',
+    path: ['confirm'],
+  })
+
 export const changePasswordSchema = z
   .object({
     password: z.string().min(8, 'Password must be at least 8 characters').max(200),
@@ -1574,6 +1633,8 @@ export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>
 export type OnboardingDocumentInput = z.infer<typeof onboardingDocumentSchema>
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>
 export type ResolveTokenInput = z.infer<typeof resolveTokenSchema>
+export type PasswordResetVerifyInput = z.infer<typeof passwordResetVerifySchema>
+export type PasswordResetConfirmInput = z.infer<typeof passwordResetConfirmSchema>
 export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>
 export type ProcessExitInput = z.infer<typeof processExitSchema>
 export type CreateEmployeeDocumentInput = z.infer<typeof createEmployeeDocumentSchema>

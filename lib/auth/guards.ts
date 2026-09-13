@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { cache } from 'react'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { AppUser } from '@/lib/types'
@@ -27,21 +28,49 @@ export interface SessionUser extends AppUser {
  */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createSupabaseServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
 
-  if (!user) return null
+  let authUser = (await supabase.auth.getUser()).data.user
+
+  /*
+   * EXPIRED-SESSION RETRY. The proxy refreshes the session on PAGE navigations only —
+   * its matcher deliberately excludes /api — and a page with no browser Supabase client
+   * (the onboarding wizard is one) runs no client-side autoRefreshToken either. So a user
+   * who sits on one form longer than the access token's lifetime submits with an EXPIRED
+   * token, and the route handler is the first thing to notice. One explicit refresh and a
+   * second getUser() heals that case (and the refresh-token rotation race, since re-presenting
+   * the previous refresh token inside Supabase's reuse interval returns the same new session).
+   * Gated on an auth cookie being present so a genuinely anonymous caller skips the attempt
+   * instead of spamming the log with AuthSessionMissingError.
+   */
+  if (!authUser) {
+    const jar = await cookies()
+    const hasAuthCookie = jar.getAll().some((c) => c.name.includes('auth-token') && c.value)
+    if (!hasAuthCookie) return null
+
+    const { error: refreshError } = await supabase.auth.refreshSession()
+    if (refreshError) {
+      console.error('[auth] session refresh failed', refreshError.message)
+      return null
+    }
+    authUser = (await supabase.auth.getUser()).data.user
+    if (!authUser) return null
+  }
 
   const { data, error } = await supabase
     .from('users')
     .select(
       'id, organization_id, department_id, role_id, full_name, email, phone, is_active, created_at, roles(name), departments(name, slug)'
     )
-    .eq('id', user.id)
+    .eq('id', authUser.id)
     .single()
 
-  if (error || !data) return null
+  // A rejected query and an RLS-empty result both arrive as null, which the caller reads as
+  // "Not authenticated" — indistinguishable from a stale session and impossible to diagnose
+  // without this line. Log the real cause; the 401 the caller sees stays unchanged.
+  if (error || !data) {
+    if (error) console.error('[auth] users row lookup failed', error.message)
+    return null
+  }
 
   const role = data.roles as unknown as { name: string } | null
   const department = data.departments as unknown as { name: string; slug: string } | null

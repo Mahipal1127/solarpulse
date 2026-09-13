@@ -25,7 +25,12 @@ import { createServerClient } from '@supabase/ssr'
 
 // Paths that must stay reachable WHILE must_change_password is true, or the gate would trap the
 // user (can't reach the page that clears the flag) or break login itself.
-const ALLOWLIST = ['/login', '/change-password', '/forbidden']
+//
+// /reset-password is allowlisted too: it IS the forgot-my-password surface, so it must stay
+// reachable even for a signed-in user who is mid forced-change — that person is exactly the one
+// who lost the temporary password HR handed over. Identity there is proven by the Employee ID +
+// attendance-QR pairing inside the page, never by a session.
+const ALLOWLIST = ['/login', '/change-password', '/reset-password', '/forbidden']
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })

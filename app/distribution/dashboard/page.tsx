@@ -3,6 +3,7 @@ import { requireDepartment, isReadOnlyFor, isDepartmentManager } from '@/lib/aut
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Card, CardHeader, Badge, StatCard, EmptyState } from '@/components/ui/primitives'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { DISTRIBUTION_DEPARTMENT_SLUG } from '@/lib/services/distribution'
 import {
   getPurchaseOrderSummary,
@@ -85,6 +86,8 @@ export default async function DistributionDashboardPage() {
           Procurement, dispatch, and material movement across every live project.
         </p>
       </div>
+
+      <PulseAIPanel user={user} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard

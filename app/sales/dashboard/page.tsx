@@ -9,6 +9,7 @@ import { FollowUpQueue } from '@/components/sales/Dashboard/FollowUpQueue'
 import { TargetProgressCard } from '@/components/sales/Dashboard/TargetProgressCard'
 import { ActivityFeed } from '@/components/sales/Dashboard/ActivityFeed'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { getSalesEmployees, getSalesDepartmentId } from '@/lib/sales/queries'
 import {
   getSalesSummary,
@@ -131,6 +132,8 @@ export default async function SalesDashboardPage(props: PageProps<'/sales/dashbo
           </div>
         )}
       </header>
+
+      <PulseAIPanel user={user} />
 
       {tab === 'team' ? (
         <TeamView

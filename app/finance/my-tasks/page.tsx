@@ -2,13 +2,15 @@ import { requireAnyDepartment } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { FINANCE_DEPARTMENT_SLUGS } from '@/lib/services/finance'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
+import { AwaitingDelegationSection } from '@/components/shared/AwaitingDelegationSection'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * A Finance/Accounts person's own task list — the same board every module gets. Filtered by
- * assigned_user_id; RLS restricts the rows. CEO tasks handed to Finance without a named owner
- * stay on the dashboard's delegation inbox for the lead.
+ * assigned_user_id; RLS restricts the rows. CEO tasks handed to Finance without a named
+ * owner appear for the lead in the delegation section above the board (they used to live
+ * on the dashboard's delegation inbox alone).
  */
 export default async function FinanceMyTasksPage() {
   const user = await requireAnyDepartment([...FINANCE_DEPARTMENT_SLUGS])
@@ -34,6 +36,8 @@ export default async function FinanceMyTasksPage() {
           them separately.
         </p>
       </header>
+
+      <AwaitingDelegationSection user={user} />
 
       <MyTaskBoard initialTasks={tasks} userId={user.id} />
     </div>

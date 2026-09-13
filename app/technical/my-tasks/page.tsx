@@ -2,6 +2,7 @@ import { requireDepartment } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { TECHNICAL_DEPARTMENT_SLUG } from '@/lib/services/technical'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
+import { AwaitingDelegationSection } from '@/components/shared/AwaitingDelegationSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +11,8 @@ export const dynamic = 'force-dynamic'
  *
  * Filtered by assigned_user_id, not by department: these are the tasks a person owns,
  * and RLS already restricts the rows to those they may see. Tasks the CEO gave
- * Technical without naming anyone stay on the dashboard's department tab, since
+ * Technical without naming anyone render for the lead in the delegation section above
+ * the board (they used to live on the dashboard's department tab alone), since
  * handing those out is the lead's job rather than something an engineer picks from.
  *
  * requireDepartment, not the layout's requireUser — a Sales visitor reaching this
@@ -41,6 +43,8 @@ export default async function TechnicalMyTasksPage() {
           them separately.
         </p>
       </header>
+
+      <AwaitingDelegationSection user={user} />
 
       <MyTaskBoard initialTasks={tasks} userId={user.id} />
     </div>

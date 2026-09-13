@@ -5,6 +5,7 @@ import { Card, CardHeader, StatCard, Badge } from '@/components/ui/primitives'
 import { SEGMENT_TRACK, segmentClass } from '@/components/shared/chrome'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { InsightFeed } from '@/components/marketing/InsightFeed'
 import {
   getContentItems,
@@ -94,6 +95,8 @@ export default async function MarketingDashboardPage(props: PageProps<'/marketin
           </div>
         )}
       </header>
+
+      <PulseAIPanel user={user} />
 
       {tab === 'team' ? (
         <TeamView

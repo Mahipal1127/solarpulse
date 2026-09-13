@@ -3,6 +3,7 @@ import 'server-only'
 import { requireRole } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { AIChat } from '@/components/ceo/AIChat/AIChat'
+import { greetingFor } from '@/lib/greeting'
 import type { AISettingsPublic } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -28,29 +29,6 @@ export const dynamic = 'force-dynamic'
  * Readiness comes from the `ai_settings_public` view, which exposes `has_api_key` as a
  * boolean. The key itself is not selectable here and is never sent to the browser.
  */
-
-/**
- * Asia/Kolkata rather than the server's zone. Every other date in this app is
- * formatted 'en-IN' and money is INR, so the business runs on IST — a greeting derived
- * from a UTC host clock would tell a CEO "good morning" at half past five in the
- * evening.
- */
-function greetingFor(fullName: string | null): string {
-  const hour = Number(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Kolkata',
-      hour: 'numeric',
-      hour12: false,
-    }).format(new Date())
-  )
-
-  const timeOfDay =
-    hour < 5 ? 'Good evening' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-
-  // First name only. "Good morning, Mahipal Singh Rathore" is a form letter.
-  const firstName = fullName?.trim().split(/\s+/)[0]
-  return firstName ? `${timeOfDay}, ${firstName}` : timeOfDay
-}
 
 export default async function DashboardPage() {
   const user = await requireRole('CEO')

@@ -5,6 +5,7 @@ import { Card, CardHeader, StatCard } from '@/components/ui/primitives'
 import { SEGMENT_TRACK, segmentClass } from '@/components/shared/chrome'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { HandoffQueue } from '@/components/technical/Dashboard/HandoffQueue'
 import { SurveySchedule } from '@/components/technical/Dashboard/SurveySchedule'
 import { DesignBoard } from '@/components/technical/Dashboard/DesignBoard'
@@ -95,6 +96,8 @@ export default async function TechnicalDashboardPage(
           </div>
         )}
       </header>
+
+      <PulseAIPanel user={user} />
 
       {tab === 'team' ? (
         <TeamView

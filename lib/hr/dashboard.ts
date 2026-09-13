@@ -130,13 +130,50 @@ export async function getRoleOptions(): Promise<RoleOption[]> {
     .from('roles')
     .select('id, name, departments(name)')
     .order('name', { ascending: true })
-  return (data ?? [])
-    .filter((r) => !RETIRED_ONBOARDING_ROLES.includes(r.name as string))
-    .map((r) => ({
-      id: r.id as string,
-      name: r.name as string,
-      department_name: (r.departments as unknown as { name: string } | null)?.name ?? null,
-    }))
+
+  const all = (data ?? []).map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    department_name: (r.departments as unknown as { name: string } | null)?.name ?? null,
+  }))
+
+  const selectable = all.filter((r) => !RETIRED_ONBOARDING_ROLES.includes(r.name))
+
+  /*
+   * FALLBACK. The retired-Executive list assumes every department's '<X> Manager'
+   * role exists — migrations 0005/0007/0008/0012/0013/0014/0015/0016/0017 each
+   * seed theirs. On a database where one of those migrations has not been
+   * applied (or was applied after this filter shipped), the affected department
+   * would offer ZERO roles and HR could not onboard anyone into it — the roles
+   * simply vanish from the dropdown with no error anywhere. If a department has
+   * no selectable role at all, show its Executive role rather than an empty
+   * picker: a scoped role is better than a department HR cannot staff. The real
+   * fix is running the migration (or supabase/seed_missing_manager_roles.sql);
+   * this fallback only makes the failure visible instead of silent.
+   */
+  const departmentsWithNoSelectableRole = new Set(
+    all
+      .map((r) => r.department_name)
+      .filter(
+        (dept) =>
+          dept !== null &&
+          !selectable.some((s) => s.department_name === dept)
+      )
+  )
+
+  if (departmentsWithNoSelectableRole.size > 0) {
+    return [
+      ...selectable,
+      ...all.filter(
+        (r) =>
+          RETIRED_ONBOARDING_ROLES.includes(r.name) &&
+          r.department_name !== null &&
+          departmentsWithNoSelectableRole.has(r.department_name)
+      ),
+    ]
+  }
+
+  return selectable
 }
 
 export interface CandidateWithInterviews extends Candidate {

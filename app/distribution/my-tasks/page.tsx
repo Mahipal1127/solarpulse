@@ -2,6 +2,7 @@ import { requireDepartment } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { DISTRIBUTION_DEPARTMENT_SLUG } from '@/lib/services/distribution'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
+import { AwaitingDelegationSection } from '@/components/shared/AwaitingDelegationSection'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,8 +11,9 @@ export const dynamic = 'force-dynamic'
  *
  * Filtered by assigned_user_id, not by department: these are the tasks a person
  * owns, and RLS already restricts the rows to those they may see. The department
- * inbox — tasks the CEO gave Distribution without naming anyone — lives on the
- * dashboard instead, since handing those out is a manager's job.
+ * inbox — tasks the CEO gave Distribution without naming anyone — renders for the
+ * manager in the delegation section above the board (it used to live on the
+ * dashboard alone), since handing those out is a manager's job.
  */
 export default async function DistributionMyTasksPage() {
   const user = await requireDepartment(DISTRIBUTION_DEPARTMENT_SLUG)
@@ -37,6 +39,8 @@ export default async function DistributionMyTasksPage() {
           them separately.
         </p>
       </header>
+
+      <AwaitingDelegationSection user={user} />
 
       <MyTaskBoard initialTasks={tasks} userId={user.id} />
     </div>

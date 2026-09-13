@@ -5,6 +5,7 @@ import { Card, CardHeader, StatCard, Badge, EmptyState } from '@/components/ui/p
 import { SEGMENT_TRACK, segmentClass } from '@/components/shared/chrome'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import {
   getInstallationSummary,
   getServiceSummary,
@@ -97,6 +98,8 @@ export default async function OMDashboardPage(props: PageProps<'/om/dashboard'>)
           </div>
         )}
       </header>
+
+      <PulseAIPanel user={user} />
 
       {tab === 'team' ? (
         <TeamView

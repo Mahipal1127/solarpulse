@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { generateTempPassword } from '@/lib/passwords'
 import { CredentialHandover } from '@/components/hr/CredentialHandover'
 import { EMPLOYEE_DOCUMENT_TYPES } from '@/lib/hr/constants'
@@ -79,6 +80,8 @@ export function OnboardingWizard({
 
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Synchronous submit guard — see submit() for why useState alone is not enough.
+  const submittingRef = useRef(false)
   // Set once provisioning succeeds. It replaces the whole wizard body rather than redirecting
   // straight to the profile board: the password is never persisted, so navigating away before HR
   // has read it would lose it for good.
@@ -163,8 +166,28 @@ export function OnboardingWizard({
   }
 
   async function submit() {
+    // Re-entrancy guard. setPending(true) only disables the button after React re-renders,
+    // so a fast double-click can fire two POSTs before the disabled state lands — and two
+    // concurrent requests carrying the same expired session race each other's token refresh
+    // (one rotates the refresh token, the other is rejected as already-used). One submit at
+    // a time, always.
+    if (submittingRef.current) return
+    submittingRef.current = true
     setPending(true)
     setError(null)
+
+    /*
+     * SESSION KEEPALIVE, DETERMINISTIC. This page creates no browser Supabase client, so
+     * nothing refreshes the session while HR fills the form — and the proxy refreshes on
+     * page navigations only, never on this POST. A form filled for longer than the access
+     * token's lifetime (the default is one hour) would otherwise submit with an expired
+     * token and fail the route's guard with 401 "Not authenticated" — one button away from
+     * done, with the whole form's data on screen. getSession() goes through the auth
+     * client's load-session path, which refreshes an expired token and rewrites the auth
+     * cookies BEFORE the fetch below runs. Best-effort: a failed refresh is ignored here
+     * and the server-side retry in getSessionUser() is the second net.
+     */
+    await createClient().auth.getSession().catch(() => { })
 
     const res = await fetch('/api/onboarding', {
       method: 'POST',
@@ -190,6 +213,7 @@ export function OnboardingWizard({
 
     const body = await res.json().catch(() => ({}))
     setPending(false)
+    submittingRef.current = false
 
     if (!res.ok) {
       setError(body.error ?? 'Could not complete onboarding.')
@@ -536,13 +560,12 @@ function Stepper({ step }: { step: Step }) {
         return (
           <div key={label} className="flex items-center gap-2">
             <span
-              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-                active
+              className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${active
                   ? 'bg-brand-gold text-white'
                   : done
                     ? 'bg-brand-slate text-white'
                     : 'bg-surface-bg text-text-muted'
-              }`}
+                }`}
             >
               {n}
             </span>

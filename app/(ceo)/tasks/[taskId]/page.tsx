@@ -5,7 +5,9 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Paperclip } from 'lucide-react'
 import { requireRole } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { getTaskFlow } from '@/lib/services/tasks'
 import { Card, CardHeader, Badge, ProgressBar, EmptyState } from '@/components/ui/primitives'
+import { TaskFlowTimeline } from '@/components/shared/TaskFlowTimeline'
 import { TaskActions } from '@/components/ceo/TaskBoard/TaskActions'
 import {
   formatDate,
@@ -42,7 +44,7 @@ type TimelineEntry = {
 }
 
 export default async function TaskDetailPage(props: PageProps<'/tasks/[taskId]'>) {
-  await requireRole('CEO')
+  const user = await requireRole('CEO')
   const { taskId } = await props.params
   const supabase = await createSupabaseServerClient()
 
@@ -75,6 +77,9 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[taskId]'>
   const assignee = task.assignee as unknown as { full_name: string } | null
   const creator = task.creator as unknown as { full_name: string } | null
   const overdue = isOverdue(task as Task)
+  // The delegation chain this task sits in — root plus every visible descendant.
+  // For the CEO (and the origin department's manager) this is the whole journey.
+  const flow = await getTaskFlow(user, taskId)
 
   /*
    * Who last reported progress. The timeline is already ordered newest-first, so the
@@ -170,6 +175,18 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[taskId]'>
               )}
             </dl>
           </Card>
+
+          {flow && flow.nodes.length > 1 && (
+            <Card>
+              <CardHeader
+                title="Task flow"
+                subtitle="Every requirement raised under this task and where the work travelled — the chain stays owned by the department it started in."
+              />
+              <div className="p-5">
+                <TaskFlowTimeline flow={flow} />
+              </div>
+            </Card>
+          )}
 
           <Card>
             <CardHeader

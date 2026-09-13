@@ -2,14 +2,17 @@ import { requireDepartment } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { SALES_DEPARTMENT_SLUG } from '@/lib/services/sales'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
+import { AwaitingDelegationSection } from '@/components/shared/AwaitingDelegationSection'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Tasks assigned to this person specifically, nothing else. The department's
- * unowned tasks live on the manager's team tab — an executive should never see a
- * colleague's task here, which migration 0006's member_view_relevant_tasks
- * enforces regardless of what this query asks for.
+ * Tasks assigned to this person specifically — that is what the board below
+ * shows. An executive should never see a colleague's task here, which migration
+ * 0006's member_view_relevant_tasks enforces regardless of what this query asks
+ * for. The department's unowned tasks are not lost, though: the manager sees
+ * them in the delegation section above the board, so they no longer live on the
+ * dashboard alone.
  */
 export default async function SalesMyTasksPage() {
   const user = await requireDepartment(SALES_DEPARTMENT_SLUG)
@@ -35,6 +38,8 @@ export default async function SalesMyTasksPage() {
           separately.
         </p>
       </header>
+
+      <AwaitingDelegationSection user={user} />
 
       <MyTaskBoard initialTasks={tasks} userId={user.id} />
     </div>

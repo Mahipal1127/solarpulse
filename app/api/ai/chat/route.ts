@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireRoleOrThrow } from '@/lib/auth/guards'
+import { requireUserOrThrow, type SessionUser } from '@/lib/auth/guards'
 import { loadAIConfig, requireUsableAI, recordUsage, AIUnavailableError } from '@/lib/ai/config'
 import { AI_TURN_JSON_SCHEMA, aiTurnSchema, validateProposal } from '@/lib/ai/proposalSchema'
 import { buildAIContext } from '@/lib/ai/context'
@@ -19,7 +19,19 @@ const chatRequestSchema = z.object({
 })
 
 /**
- * The assistant now reads every module the CEO can see — see lib/ai/context.ts.
+ * The assistant reads every module the CALLER can see — see lib/ai/context.ts.
+ *
+ * WHO GETS IT
+ * Every active, signed-in member of the organisation, not only the CEO. Two things
+ * make that safe, and both already existed:
+ *   1. The context is built on the caller's own session (the RLS-bound client), so a
+ *      department employee's assistant sees exactly what that employee can see —
+ *      their tasks and their department's work — and nothing else. Opening the route
+ *      widens the audience, never the reach.
+ *   2. Every proposal executor lives in /api/ai/confirm, which stays CEO-gated. For
+ *      a department user the prompt forbids proposing AND the route refuses a
+ *      proposed_action outright below, so no unconfirmable proposal can ever be
+ *      written to ai_command_log.
  *
  * WHAT CHANGED IN THIS PROMPT, AND WHY IT HAD TO
  * The old version told the model "you have read-only visibility into tasks, pending
@@ -40,9 +52,14 @@ const chatRequestSchema = z.object({
  * authorization and its own audit row before it could exist. Until then the
  * assistant advises on those modules and proposes changes only to tasks.
  */
-const CHAT_SYSTEM = (context: string) => `You are the operations assistant for the CEO of Solar Pulse, an Indian rooftop and commercial solar EPC company. You can see every department: tasks, approvals, sales, tenders, procurement and distribution, and technical.
 
-HOW TO WRITE
+/**
+ * The writing and truthfulness rules are identical for every audience — a
+ * department engineer and the CEO both read the answer between meetings, and both
+ * must be able to trust what it says. Kept as separate constants so the CEO and
+ * employee prompts cannot drift apart on the parts that should never differ.
+ */
+const WRITE_RULES = `HOW TO WRITE
 - Lead with the answer. No preamble, no restating the question, no "Certainly" or "Great question".
 - Short sentences. Plain words. Assume the reader is scanning between meetings.
 - Give numbers when the context has them, and name the source ("4 tasks overdue, 3 of them in Technical").
@@ -51,7 +68,19 @@ HOW TO WRITE
 - No emoji. No exclamation marks. No flattery.
 - If the answer is "nothing needs your attention", say that in one line rather than padding it.
 - When something looks wrong — a stalled task, a week-old approval, a tender past its deadline — say so plainly and say what it blocks.
-- Volunteer the thing that matters. If asked about tasks while three tenders are past their deadline, answer the question and then say so in one line.
+- Volunteer the thing that matters. If asked about tasks while three tenders are past their deadline, answer the question and then say so in one line.`
+
+const TRUTH_RULES = `BEING TRUTHFUL ABOUT DATA
+- Never invent a number, a name, a department or a date that is not in the context below. If it is not there, say you cannot see it.
+- Read the "Not available" section and honour it. Anything listed there as UNKNOWN failed to load on this request — say the figure could not be read, and never report it as zero.
+- Salary, payroll and personal documents are not stored in this system at all. Neither is attendance or leave. Say so and stop; do not estimate.
+- Customer and lead phone numbers and email addresses are deliberately withheld from you. If asked for a contact, say it is in the Sales module rather than guessing.
+- Use exact names from the department, people and task lists. An approximate match is a wrong match.
+- If a request is ambiguous — two tasks with similar titles, no department named — ask one specific question rather than guessing.
+- Aggregates are computed over capped reads where the context says so. If a cap could change the answer, say the figure covers what you can see.`
+const CHAT_SYSTEM = (context: string) => `You are the operations assistant for the CEO of Solar Pulse, an Indian rooftop and commercial solar EPC company. You can see every department: tasks, approvals, sales, tenders, procurement and distribution, and technical.
+
+${WRITE_RULES}
 
 WHAT YOU CAN READ
 Everything in the context below: task detail, pending approvals and their age, leads and pipeline, closed revenue this month, quotations, follow-ups, sales targets, tenders and their deadlines, purchase orders awaiting Finance, vendors, dispatches, material returns, site surveys, designs, IT tickets, and the latest department reports.
@@ -63,22 +92,45 @@ WHAT YOU CANNOT DO
 - You may NOT set a task's progress percentage, and must not offer to. Progress is reported by the employee doing the work; a number entered on their behalf is not evidence. If asked, say that and suggest asking the assignee for an update instead.
 - Approving an approval request is the CEO's own click in the Approvals screen, not something you can propose.
 
-BEING TRUTHFUL ABOUT DATA
-- Never invent a number, a name, a department or a date that is not in the context below. If it is not there, say you cannot see it.
-- Read the "Not available" section and honour it. Anything listed there as UNKNOWN failed to load on this request — say the figure could not be read, and never report it as zero.
-- Salary, payroll and personal documents are not stored in this system at all. Neither is attendance or leave. Say so and stop; do not estimate.
-- Customer and lead phone numbers and email addresses are deliberately withheld from you. If asked for a contact, say it is in the Sales module rather than guessing.
-- Use exact names from the department, people and task lists. An approximate match is a wrong match.
-- If a request is ambiguous — two tasks with similar titles, no department named — ask one specific question rather than guessing.
-- Aggregates are computed over capped reads where the context says so. If a cap could change the answer, say the figure covers what you can see.
+${TRUTH_RULES}
 
 --- CONTEXT ---
 ${context}
 --- END CONTEXT ---`
 
+/**
+ * The department-scope prompt. The framing matters more than the rule list: an
+ * employee's context is RLS-narrowed, so sections the CEO's context carries simply
+ * do not appear. A model told "you can see everything" fills those gaps with
+ * plausible inventions — a made-up pipeline figure is worse than a refusal. So the
+ * first instruction is what the emptiness MEANS, and the proposal power is removed
+ * outright (enforced below, not merely asked for).
+ */
+const EMPLOYEE_CHAT_SYSTEM = (context: string, user: SessionUser) => {
+  const dept = user.departmentName ?? 'their department'
+  return `You are Pulse AI, the work assistant for ${user.full_name} — ${user.roleName} in the ${dept} department of Solar Pulse, an Indian rooftop and commercial solar EPC company. You help this one person with their own work; you are not the company-wide assistant.
+
+${WRITE_RULES}
+
+WHAT YOU CAN SEE
+Only what the context below contains. It was gathered with this person's own access, so it is exactly what their role permits: their own tasks plus their department's shared queue, and whatever of their department's work the context includes. A section that is missing or empty is not a zero and not a fault — it is data this role cannot see. Asked about anything that is not in the context — another department's pipeline, another team's tickets, a figure you do not have — say you cannot see it and stop.
+
+WHAT YOU CANNOT DO
+- You answer questions; you do not make changes, and you never propose any. kind must always be "answer". Creating or changing a task, closing a deal, approving or rejecting anything, dispatching material — all of that happens in the module screens, not through you. If asked, say so plainly and point to the screen where it is done — pointing at the fix is the helpful form of "no".
+
+${TRUTH_RULES}
+
+--- CONTEXT ---
+${context}
+--- END CONTEXT ---`
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireRoleOrThrow('CEO')
+    // Any active, signed-in member of the organisation. The context below is built
+    // on their session, so RLS — not this route — decides what the assistant can
+    // see for them; the prompt above is role-aware; and proposals stay CEO-only.
+    const user = await requireUserOrThrow()
     const body = await req.json()
     const parsed = chatRequestSchema.safeParse(body)
     if (!parsed.success) {
@@ -177,8 +229,9 @@ export async function POST(req: NextRequest) {
       { role: 'user', content: message },
     ]
 
+    const isCeo = user.roleName === 'CEO'
     const result = await adapter.complete({
-      system: CHAT_SYSTEM(context.text),
+      system: isCeo ? CHAT_SYSTEM(context.text) : EMPLOYEE_CHAT_SYSTEM(context.text, user),
       messages,
       maxTokens: 2048,
       jsonSchema: { schema: AI_TURN_JSON_SCHEMA.schema as Record<string, unknown> },
@@ -205,6 +258,31 @@ export async function POST(req: NextRequest) {
     const validationError = validateProposal(turn)
     if (validationError) {
       return NextResponse.json({ error: `Invalid AI proposal: ${validationError}` }, { status: 502 })
+    }
+
+    /*
+     * Proposals are a CEO capability — /api/ai/confirm is the only executor and it
+     * is CEO-gated, so a proposal from a department user could never be confirmed.
+     * The employee prompt already forbids proposing; this is the boundary rather
+     * than the request. Refused BEFORE the ai_command_log insert so no unconfirmable
+     * 'proposed' row can ever sit in the log, and audited so a run of refusals is
+     * visible rather than silent.
+     */
+    if (user.roleName !== 'CEO' && turn.kind === 'proposed_action') {
+      await logAction({
+        organizationId: user.organization_id,
+        userId: user.id,
+        action: 'ai.proposal_blocked_role',
+        entityType: 'ai_chat',
+        metadata: { action: turn.action },
+      })
+      return NextResponse.json(
+        {
+          error:
+            'Pulse AI can only answer questions on your account. Making changes is reserved for the CEO.',
+        },
+        { status: 422 }
+      )
     }
 
     // Every AI turn is logged, answer or proposal alike.

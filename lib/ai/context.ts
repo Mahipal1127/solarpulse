@@ -540,12 +540,14 @@ export async function buildAIContext(user: SessionUser): Promise<AIContextResult
   )
 
   /*
-   * Only true when a money figure was actually read. Drives the audit row in the
-   * chat route — logging "financials accessed" on a turn where every financial
-   * read failed would put a false statement in the audit trail.
+   * Only true when a money figure was actually READ — rows in hand, not merely a
+   * query that did not error. A read that RLS answers with zero rows (a department
+   * employee's view of deal_closures, say) succeeds but includes nothing, and an
+   * audit row claiming "financials accessed" for that turn would be a false
+   * statement. Drives the audit row in the chat route.
    */
   const includedFinancials =
-    !closures.error || !quotations.error || !purchaseOrders.error || !tenders.error
+    closureRows.length > 0 || quotationRows.length > 0 || poRows.length > 0 || tenderRows.length > 0
 
   return { text: lines.join('\n'), unavailable, includedFinancials }
 }

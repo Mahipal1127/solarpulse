@@ -5,6 +5,7 @@ import { Card, CardHeader, StatCard, Badge, EmptyState } from '@/components/ui/p
 import { SEGMENT_TRACK, segmentClass } from '@/components/shared/chrome'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { AgingBadge } from '@/components/discom/AgingBadge'
 import {
   getNetMeteringSummary,
@@ -94,6 +95,8 @@ export default async function DiscomDashboardPage(props: PageProps<'/discom/dash
           </div>
         )}
       </header>
+
+      <PulseAIPanel user={user} />
 
       {tab === 'team' ? (
         <TeamView

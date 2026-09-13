@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Card, CardHeader, StatCard, EmptyState, Badge } from '@/components/ui/primitives'
 import { MyTaskBoard, type AssignedTask } from '@/components/employee/MyTaskBoard'
 import { DepartmentTaskInbox } from '@/components/shared/DepartmentTaskInbox'
+import { PulseAIPanel } from '@/components/shared/PulseAIPanel'
 import { TenderList } from '@/components/tender/TenderList/TenderList'
 import {
   getTenderSummary,
@@ -122,6 +123,8 @@ export default async function TenderOverviewPage() {
           </Link>
         )}
       </header>
+
+      <PulseAIPanel user={user} />
 
       {/*
         Overdue sits above the stat cards, the same placement Technical gives its
