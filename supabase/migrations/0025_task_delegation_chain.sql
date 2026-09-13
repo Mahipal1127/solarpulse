@@ -40,6 +40,30 @@
 --   department it was already assigned to — nothing changes for anyone.
 
 -- ---------------------------------------------------------------------------
+-- 0. Helper — included here so this migration stands alone
+--
+-- auth_my_department_has_active_manager() is defined in 0022, but a database
+-- may have skipped or partially applied that file. create or replace makes
+-- this idempotent: on a 0022'd database it is a no-op that redefines the
+-- identical function, and on a fresh one it fills the gap instead of failing
+-- at the first policy that calls it. Same '<Department> Manager' role-name
+-- convention as auth_is_department_manager() (0006); security definer so it
+-- sees users regardless of the caller's own RLS.
+-- ---------------------------------------------------------------------------
+
+create or replace function auth_my_department_has_active_manager()
+returns boolean language sql stable security definer set search_path = public
+as $$
+  select exists (
+    select 1 from users u
+    join roles r on r.id = u.role_id
+    where u.department_id = auth_department_id()
+      and u.is_active
+      and r.name like '%Manager'
+  );
+$$;
+
+-- ---------------------------------------------------------------------------
 -- 1. Chain columns
 -- ---------------------------------------------------------------------------
 

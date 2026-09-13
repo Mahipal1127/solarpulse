@@ -11,6 +11,7 @@ import {
   Building2,
   Users,
   Sparkles,
+  CalendarClock,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SIDEBAR_BODY, navIconClass, navItemClass } from '@/components/shared/chrome'
@@ -41,6 +42,7 @@ const PRIMARY_NAV = [
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/approvals', label: 'Approvals', icon: ClipboardCheck },
   { href: '/applications', label: 'Applications', icon: Inbox },
+  { href: '/attendance', label: 'Attendance', icon: CalendarClock },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/departments', label: 'Departments', icon: Building2 },
   { href: '/employees', label: 'Employees', icon: Users },
