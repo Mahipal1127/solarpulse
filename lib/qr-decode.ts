@@ -31,17 +31,31 @@ const FULL_FRAME_EDGE = 960
  *  pixels than the full frame — that is the whole point of the ladder. */
 const CROP_EDGE = 1280
 
+/**
+ * One canvas reused across every rung. At scanning pace the ladder runs many
+ * times a second; allocating a canvas and a 2D context per attempt churns
+ * exactly the objects the browser then has to warm again. Assigning
+ * width/height clears the reused backing store, which is all a fresh
+ * drawImage needs anyway.
+ */
+let sharedCanvas: HTMLCanvasElement | null = null
+let sharedContext: CanvasRenderingContext2D | null = null
+
 function attemptDecode(
   source: CanvasImageSource,
   region: { x: number; y: number; w: number; h: number },
   maxEdge: number
 ): string | null {
   const scale = Math.min(1, maxEdge / Math.max(region.w, region.h))
-  const canvas = document.createElement('canvas')
+  if (!sharedCanvas || !sharedContext) {
+    sharedCanvas = document.createElement('canvas')
+    sharedContext = sharedCanvas.getContext('2d', { willReadFrequently: true })
+  }
+  const canvas = sharedCanvas
+  const ctx = sharedContext
+  if (!canvas || !ctx) return null
   canvas.width = Math.max(1, Math.round(region.w * scale))
   canvas.height = Math.max(1, Math.round(region.h * scale))
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return null
   ctx.drawImage(
     source,
     region.x,

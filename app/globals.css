@@ -441,6 +441,44 @@ body {
   }
 }
 
+/* ---------------------------------------------------------------------------
+   QR Attendance kiosk
+   A gold scan line sweeping the viewfinder while the camera looks for a card.
+   Between scans the camera preview alone does not read as active — the moving
+   line is the one element saying "the kiosk is looking". Travel is `top`-based
+   so the line spans whatever the viewfinder's height turns out to be.
+   --------------------------------------------------------------------------- */
+
+@keyframes kiosk-scan {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 0.7;
+  }
+  100% {
+    top: calc(100% - 3px);
+    opacity: 0;
+  }
+}
+
+/* A scan outcome easing into place — the result panel fades up from a few
+   pixels below instead of hard-swapping, so a new scan reads as the panel
+   updating in place rather than flickering between states. Replayed per
+   outcome by keying the panel's content on the outcome. */
+@keyframes kiosk-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @theme {
   --animate-chat-rise: chat-rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-chat-fade: chat-fade 0.4s ease-out both;
@@ -448,6 +486,8 @@ body {
   --animate-mic-ring: mic-ring 1.8s ease-out infinite;
   --animate-mic-breathe: mic-breathe 1.8s ease-in-out infinite;
   --animate-mic-caption: mic-caption 0.2s ease-out both;
+  --animate-kiosk-scan: kiosk-scan 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  --animate-kiosk-fade: kiosk-fade 0.35s ease-out both;
 }
 
 /*
@@ -460,7 +500,10 @@ body {
   .animate-chat-rise,
   .animate-chat-fade,
   .animate-mic-caption,
-  .animate-mic-breathe {
+  .animate-mic-breathe,
+  /* The kiosk's panel fade — stilled, since the content swap itself carries
+     the change. */
+  .animate-kiosk-fade {
     animation: none;
   }
 
@@ -471,6 +514,15 @@ body {
      the listening state on their own.
   */
   .animate-mic-ring {
+    display: none;
+  }
+
+  /*
+     The kiosk scan line, same logic: frozen mid-frame it reads as a rendering
+     artefact, so it is removed outright. The live camera preview carries the
+     "the kiosk is looking" state on its own.
+  */
+  .animate-kiosk-scan {
     display: none;
   }
 }

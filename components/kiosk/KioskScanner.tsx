@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, CameraOff, Flashlight, FlashlightOff, LogIn, LogOut, ScanFace, Volume2 } from 'lucide-react'
+import { AlertTriangle, Camera, CameraOff, Flashlight, FlashlightOff, LogIn, LogOut, ScanFace, Volume2 } from 'lucide-react'
 import { decodeQrToken } from '@/lib/qr-decode'
 import type { KioskMarkResult } from '@/lib/services/kiosk'
 
 /**
- * The attendance kiosk screen.
+ * The QR Attendance kiosk screen.
  *
  * THE LOOP AN EMPLOYEE LIVES IN
  * Scan → the side panel fills with their photo and name, the machine says the
@@ -17,20 +17,18 @@ import type { KioskMarkResult } from '@/lib/services/kiosk'
  * SPEECH. window.speechSynthesis — built into every modern browser, no
  * dependency, no network round trip. Announced only after a SUCCESSFUL write
  * (or an explicit "already marked out"), never for an error: a machine that
- * talks over its own failure messages teaches people to ignore it.
+ * talks over its own failure messages teaches people to ignore it. Working
+ * hours are shown on the panel, never spoken — numbers read aloud in a
+ * doorway are just noise.
  *
  * SCANNING IS jsQR, via the shared crop-ladder decoder (lib/qr-decode.ts):
- * full frame first, then 80% and 60% center crops at near-full resolution, so
- * a small or distant code keeps the pixels a flat downscale throws away, and
- * inverted (glare-blown) codes read. The token is 256 bits of opaque text, so
- * a misread frame is rejected by the server as an unrecognised card rather
- * than misattributing attendance to a colleague.
- *
- * TWO-FRAME AGREEMENT. A token must decode identically on two consecutive
- * frames before the kiosk acts. A torn or half-glimpsed frame that happens to
- * decode is noise by definition, and agreement across frames is what separates
- * a real card from one artefact. The screen shows "Hold steady" while the
- * second frame is being confirmed, so the employee knows not to move.
+ * full frame first, then 80% and 60% center crops at near-full resolution, and
+ * inverted (glare-blown) codes read. The kiosk acts on the FIRST decode: a QR
+ * carries built-in error correction, so a payload that decodes IS the token —
+ * there is no partial success to distrust — and speed is the point of a door.
+ * The token is 256 bits of opaque text, so even a garbled frame is rejected by
+ * the server as an unrecognised card rather than misattributing attendance to
+ * a colleague.
  *
  * TORCH. Doorways are dark and cards are glossy. When the camera supports a
  * flash (most rear Android cameras), a toggle lights the scan — often the
@@ -42,8 +40,6 @@ import type { KioskMarkResult } from '@/lib/services/kiosk'
 const COOLDOWN_MS = 15_000
 /** How long a result holds on screen before the kiosk clears for the next person. */
 const RESULT_HOLD_MS = 9_000
-/** Milliseconds without a confirming decode before a pending read is discarded. */
-const PENDING_WINDOW_MS = 1_500
 
 interface ScanOutcome {
   key: number
@@ -61,7 +57,8 @@ function speak(outcome: ScanOutcome) {
     outcome.result?.action === 'in'
       ? `Welcome ${name}. Marked in.`
       : outcome.result?.action === 'out'
-        ? `Goodbye ${name}. Marked out. ${Math.round(((outcome.result.workedMinutes ?? 0) / 60) * 10) / 10} hours worked today.`
+        ? // Hours are calculated for the panel, never spoken.
+          `Goodbye ${name}. Marked out.`
         : outcome.result?.action === 'already_out'
           ? `${name}, you have already marked out today.`
           : outcome.title
@@ -84,10 +81,6 @@ export function KioskScanner() {
   const [cameraOn, setCameraOn] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<ScanOutcome | null>(null)
-  const [history, setHistory] = useState<ScanOutcome[]>([])
-  // A read is in progress: the first agreeing frame decoded and the kiosk is
-  // confirming it. Shown as "Hold steady" so nobody moves mid-read.
-  const [confirming, setConfirming] = useState(false)
   const [torchAvailable, setTorchAvailable] = useState(false)
   const [torchOn, setTorchOn] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -109,7 +102,6 @@ export function KioskScanner() {
     trackRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
     setCameraOn(false)
-    setConfirming(false)
     setTorchOn(false)
     setTorchAvailable(false)
   }, [])
@@ -200,7 +192,6 @@ export function KioskScanner() {
 
     setOutcome(outcome)
     if (outcome.ok) {
-      setHistory((prev) => [outcome, ...prev].slice(0, 12))
       speak(outcome)
       // Clear for the next person, but only if nothing newer arrived.
       window.setTimeout(() => {
@@ -263,11 +254,6 @@ export function KioskScanner() {
 
     let cancelled = false
     let lastDecodeAt = 0
-    // The candidate read: the first agreeing decode, waiting for a second
-    // frame to confirm it. Cleared on a different decode, on timeout, or on
-    // confirmation — never allowed to age into an unconfirmed act.
-    let pendingToken: string | null = null
-    let pendingAt = 0
     video.srcObject = stream
     void video.play().catch(() => {})
 
@@ -276,29 +262,20 @@ export function KioskScanner() {
       if (
         video.readyState >= 2 &&
         video.videoWidth > 0 &&
-        performance.now() - lastDecodeAt > 130
+        // ~14 decode attempts a second — the pace where jsQR stays cheap and
+        // a presented card is read within a beat of landing in the frame.
+        performance.now() - lastDecodeAt > 70
       ) {
         lastDecodeAt = performance.now()
         try {
           const token = decodeQrToken(video, video.videoWidth, video.videoHeight)
           if (token) {
-            if (token === pendingToken) {
-              // Second consecutive identical decode — a real card, held
-              // steady. The kiosk acts on the read.
-              cancelled = true
-              setConfirming(false)
-              handleRef.current(token)
-              return
-            }
-            // First decode (or a different one than the pending candidate).
-            pendingToken = token
-            pendingAt = performance.now()
-            setConfirming(true)
-          } else if (pendingToken && performance.now() - pendingAt > PENDING_WINDOW_MS) {
-            // The confirming frame never came — the card moved or the glare
-            // shifted. Discard the candidate and keep scanning.
-            pendingToken = null
-            setConfirming(false)
+            // First decode acts immediately — a QR's error correction means a
+            // payload that decodes IS the token. The loop keeps scanning: the
+            // per-token cooldown absorbs the same card re-reading while its
+            // result is on screen, so the next person can walk up the moment
+            // this scan is handled. Speed is the point of a door.
+            handleRef.current(token)
           }
         } catch {
           // A torn frame mid-teardown; keep scanning.
@@ -321,28 +298,40 @@ export function KioskScanner() {
         {/* Scanner */}
         <div className="overflow-hidden rounded-2xl border border-border-subtle bg-black/90">
           {cameraOn ? (
-            <div className="relative">
-              <video ref={videoRef} muted playsInline className="h-[420px] w-full object-cover" />
-              <div
-                className={`pointer-events-none absolute inset-8 rounded-2xl border-4 transition-colors ${
-                  confirming ? 'border-status-info/90' : 'border-brand-gold/80'
-                }`}
+            <div className="animate-kiosk-fade relative overflow-hidden">
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                className="h-[460px] w-full object-cover"
               />
-              {confirming && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
-                  <span className="rounded-full bg-black/70 px-4 py-1.5 text-xs font-semibold text-white">
-                    Hold steady — confirming…
-                  </span>
-                </div>
-              )}
+
+              {/* Viewfinder. Corner brackets show where a code reads best;
+                  the sweeping line is the motion that says the kiosk is
+                  looking between scans. */}
+              <div aria-hidden className="pointer-events-none absolute inset-8">
+                <span className="absolute left-0 top-0 h-10 w-10 rounded-tl-2xl border-l-4 border-t-4 border-brand-gold" />
+                <span className="absolute right-0 top-0 h-10 w-10 rounded-tr-2xl border-r-4 border-t-4 border-brand-gold" />
+                <span className="absolute bottom-0 left-0 h-10 w-10 rounded-bl-2xl border-b-4 border-l-4 border-brand-gold" />
+                <span className="absolute bottom-0 right-0 h-10 w-10 rounded-br-2xl border-b-4 border-r-4 border-brand-gold" />
+                <span className="animate-kiosk-scan absolute inset-x-4 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-brand-gold/90 to-transparent" />
+              </div>
+
+              <p className="pointer-events-none absolute inset-x-0 bottom-5 flex justify-center">
+                <span className="rounded-full bg-black/60 px-4 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
+                  Hold your QR card inside the frame
+                </span>
+              </p>
+
               <div className="absolute right-3 top-3 flex gap-2">
                 {torchAvailable && (
                   <button
                     type="button"
                     onClick={toggleTorch}
                     aria-label={torchOn ? 'Turn torch off' : 'Turn torch on'}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium ${
-                      torchOn ? 'bg-brand-gold text-white' : 'bg-black/60 text-white'
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium backdrop-blur-sm transition-colors ${
+                      torchOn ? 'bg-brand-gold text-white' : 'bg-black/60 text-white hover:bg-black/75'
                     }`}
                   >
                     {torchOn ? <FlashlightOff className="h-3.5 w-3.5" /> : <Flashlight className="h-3.5 w-3.5" />}
@@ -352,46 +341,57 @@ export function KioskScanner() {
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 px-3 py-1.5 text-xs font-medium text-white"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3.5 py-2 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/75"
                 >
                   <CameraOff className="h-3.5 w-3.5" /> Stop camera
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex h-[420px] flex-col items-center justify-center gap-4 bg-surface-card px-8 text-center">
-              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-gold/10 text-brand-gold">
-                <Camera className="h-8 w-8" />
+            <div className="animate-kiosk-fade flex h-[460px] flex-col items-center justify-center gap-5 bg-surface-card px-8 text-center">
+              <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-brand-gold/10 text-brand-gold">
+                <Camera className="h-9 w-9" />
               </span>
-              <p className="text-base font-semibold text-brand-slate">Scan your attendance card</p>
-              <p className="max-w-sm text-xs leading-relaxed text-text-muted">
-                Press start and hold the QR on your ID card in front of the camera. The kiosk
-                marks you in — and when your shift ends, the next scan marks you out.
-              </p>
+              <div>
+                <p className="text-lg font-semibold text-brand-slate">Ready to scan</p>
+                <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-text-muted">
+                  Press start, then hold the QR code on your ID card inside the frame. The kiosk
+                  marks you in — and marks you out when your shift ends.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={startCamera}
-                className="rounded-xl bg-brand-gold px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-orange"
+                className="inline-flex items-center gap-2 rounded-xl bg-brand-gold px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-orange"
               >
-                Start camera
+                <Camera className="h-4 w-4" /> Start camera
               </button>
             </div>
           )}
         </div>
 
         {/* Result panel — photo, name, and what the scan did */}
-        <div className="flex min-h-[420px] flex-col rounded-2xl border border-border-subtle bg-surface-card">
+        <div className="flex min-h-[460px] flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface-card">
           {outcome && outcome.result?.identity ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+            <div
+              key={outcome.key}
+              className={`animate-kiosk-fade flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center ${
+                outcome.result.action === 'in'
+                  ? 'bg-status-success/5'
+                  : outcome.result.action === 'out'
+                    ? 'bg-status-info/5'
+                    : 'bg-surface-bg'
+              }`}
+            >
               {outcome.result.photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- a short-lived signed URL for the kiosk screen; next/image would optimise a URL that expires in minutes.
                 <img
                   src={outcome.result.photoUrl}
                   alt=""
-                  className="h-32 w-32 rounded-2xl border border-border-subtle object-cover"
+                  className="h-36 w-36 rounded-2xl border border-border-subtle object-cover"
                 />
               ) : (
-                <span className="flex h-32 w-32 items-center justify-center rounded-2xl bg-brand-gold/10 text-3xl font-bold text-brand-gold">
+                <span className="flex h-36 w-36 items-center justify-center rounded-2xl bg-brand-gold/10 text-4xl font-bold text-brand-gold">
                   {outcome.result.identity.fullName
                     .split(/\s+/)
                     .map((part) => part[0])
@@ -400,17 +400,23 @@ export function KioskScanner() {
                     .toUpperCase() || '?'}
                 </span>
               )}
-              <p className="text-xl font-bold text-brand-slate">{outcome.result.identity.fullName}</p>
-              {outcome.result.identity.departmentName && (
-                <p className="text-xs text-text-muted">{outcome.result.identity.departmentName}</p>
-              )}
+              <div>
+                <p className="text-2xl font-bold tracking-tight text-brand-slate">
+                  {outcome.result.identity.fullName}
+                </p>
+                {outcome.result.identity.departmentName && (
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    {outcome.result.identity.departmentName}
+                  </p>
+                )}
+              </div>
               <div
-                className={`mt-1 flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${
+                className={`mt-1 flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold ${
                   outcome.result.action === 'in'
                     ? 'bg-status-success/10 text-status-success'
                     : outcome.result.action === 'out'
                       ? 'bg-status-info/10 text-status-info'
-                      : 'bg-surface-bg text-text-muted'
+                      : 'border border-border-subtle bg-surface-card text-text-muted'
                 }`}
               >
                 {outcome.result.action === 'in' ? (
@@ -420,45 +426,35 @@ export function KioskScanner() {
                 )}
                 {outcome.title}
               </div>
-              <p className="text-xs text-text-muted">{outcome.detail}</p>
-              <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-text-muted/70">
-                <Volume2 className="h-3 w-3" /> Announced aloud
+              <p className="max-w-xs text-sm text-text-muted">{outcome.detail}</p>
+              <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium text-text-muted/70">
+                <Volume2 className="h-3.5 w-3.5" /> Announced aloud
               </p>
             </div>
           ) : outcome ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-              <p className="text-lg font-semibold text-status-danger">{outcome.title}</p>
-              <p className="text-xs text-text-muted">{outcome.detail}</p>
+            <div
+              key={outcome.key}
+              className="animate-kiosk-fade flex flex-1 flex-col items-center justify-center gap-4 bg-status-danger/5 p-6 text-center"
+            >
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-status-danger/10 text-status-danger">
+                <AlertTriangle className="h-7 w-7" />
+              </span>
+              <div>
+                <p className="text-lg font-semibold text-status-danger">{outcome.title}</p>
+                <p className="mx-auto mt-1 max-w-xs text-sm text-text-muted">{outcome.detail}</p>
+              </div>
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
               <ScanFacePlaceholder />
             </div>
           )}
         </div>
       </div>
 
-      {/* Session log */}
-      {history.length > 0 && (
-        <div className="rounded-2xl border border-border-subtle bg-surface-card">
-          <p className="border-b border-border-subtle px-5 py-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
-            This session
-          </p>
-          <ul className="divide-y divide-border-subtle">
-            {history.map((entry) => (
-              <li key={entry.key} className="flex items-center justify-between gap-3 px-5 py-2.5">
-                <span className="text-sm font-medium text-brand-slate">
-                  {entry.result?.identity.fullName ?? entry.title}
-                </span>
-                <span className="text-xs text-text-muted">{entry.title}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {cameraError && (
-        <p className="rounded-2xl border border-status-danger/15 bg-status-danger/5 px-4 py-3 text-xs font-medium text-status-danger">
+        <p className="flex items-center justify-center gap-2 rounded-2xl border border-status-danger/15 bg-status-danger/5 px-4 py-3 text-sm font-medium text-status-danger">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
           {cameraError}
         </p>
       )}
@@ -471,10 +467,10 @@ function ScanFacePlaceholder() {
   return (
     <>
       <span className="flex h-20 w-20 items-center justify-center rounded-full bg-surface-bg text-text-muted/40">
-        <ScanFace />
+        <ScanFace className="h-9 w-9" />
       </span>
-      <p className="text-sm font-semibold text-brand-slate">Waiting for a scan</p>
-      <p className="max-w-xs text-xs text-text-muted">
+      <p className="text-base font-semibold text-brand-slate">Waiting for a scan</p>
+      <p className="max-w-xs text-sm leading-relaxed text-text-muted">
         Your photo and name appear here, and the kiosk says your name when it marks you.
       </p>
     </>
