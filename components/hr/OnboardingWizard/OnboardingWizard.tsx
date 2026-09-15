@@ -30,6 +30,26 @@ type PendingDoc = {
   file_data: string
 }
 
+/**
+ * The onboarding route answers validation failures with 400 "Invalid onboarding
+ * payload" plus the zod flatten in `details` — the actual "which field, and
+ * why" lives in details.fieldErrors. Showing the headline alone leaves HR a
+ * dead end, so this renders the flatten as one readable line ("Email: Enter a
+ * valid email · Phone: Phone may only contain digits…"), falling back to the
+ * server's own message when the details are missing or empty.
+ */
+function explainInvalidPayload(body: {
+  error?: string
+  details?: { formErrors?: string[]; fieldErrors?: Record<string, string[] | undefined> }
+}): string | null {
+  const parts = [...(body.details?.formErrors ?? [])]
+  for (const [field, messages] of Object.entries(body.details?.fieldErrors ?? {})) {
+    const label = field.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+    parts.push(`${label}: ${messages?.[0] ?? 'is invalid'}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
 type Step = 1 | 2 | 3 | 4
 
 /**
@@ -166,6 +186,20 @@ export function OnboardingWizard({
   }
 
   async function submit() {
+    // The salary field is free text people fill as "45,000" or "₹45,000".
+    // Strip that punctuation and parse BEFORE the request: Number('45,000') is
+    // NaN, and JSON.stringify turns NaN into null, which the schema would
+    // reject as an opaque invalid-payload error far away from the real cause.
+    const salaryText = baseSalary.trim()
+    const baseSalaryValue = salaryText ? Number(salaryText.replace(/[₹,\s]/g, '')) : undefined
+    if (
+      baseSalaryValue !== undefined &&
+      (!Number.isFinite(baseSalaryValue) || baseSalaryValue < 0)
+    ) {
+      setError('Starting salary must be a positive number, like 45000 or 45,000.')
+      return
+    }
+
     // Re-entrancy guard. setPending(true) only disables the button after React re-renders,
     // so a fast double-click can fire two POSTs before the disabled state lands — and two
     // concurrent requests carrying the same expired session race each other's token refresh
@@ -207,7 +241,7 @@ export function OnboardingWizard({
         profile_photo: photoData,
         documents: docs.length > 0 ? docs : undefined,
         // Omit entirely when blank so the schema's optional applies; a number otherwise.
-        base_salary: baseSalary.trim() ? Number(baseSalary) : undefined,
+        base_salary: baseSalaryValue,
       }),
     })
 
@@ -216,7 +250,9 @@ export function OnboardingWizard({
     submittingRef.current = false
 
     if (!res.ok) {
-      setError(body.error ?? 'Could not complete onboarding.')
+      // The 400's details carry the per-field reasons — surface them, not the
+      // headline alone, so HR knows exactly which field to fix.
+      setError(explainInvalidPayload(body) ?? body.error ?? 'Could not complete onboarding.')
       return
     }
 
