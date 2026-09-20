@@ -3,7 +3,7 @@ import { MARKETING_DEPARTMENT_SLUG, isMarketingLead } from '@/lib/services/marke
 import { MarketingSidebarNav } from '@/components/marketing/MarketingSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Marketing & Training module shell.
@@ -27,13 +27,15 @@ export default async function MarketingLayout({ children }: { children: React.Re
   const readOnly = isReadOnlyFor(user, MARKETING_DEPARTMENT_SLUG)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`Marketing${isMarketingLead(user) ? ' · Lead' : ''}`} />
-        <MarketingSidebarNav isCeo={user.roleName === 'CEO'} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`Marketing${isMarketingLead(user) ? ' · Lead' : ''}`} />
+          <MarketingSidebarNav isCeo={user.roleName === 'CEO'} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -54,6 +56,6 @@ export default async function MarketingLayout({ children }: { children: React.Re
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

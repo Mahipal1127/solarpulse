@@ -3,7 +3,7 @@ import { TENDER_DEPARTMENT_SLUG } from '@/lib/services/tenders'
 import { TenderSidebarNav } from '@/components/tender/TenderSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 export default async function TenderLayout({ children }: { children: React.ReactNode }) {
   // Tender department members, plus the CEO — who gets in read-only, per the
@@ -13,13 +13,15 @@ export default async function TenderLayout({ children }: { children: React.React
   const manager = isDepartmentManager(user)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`Tender${manager ? ' · Manager' : ''}`} />
-        <TenderSidebarNav isCeo={user.roleName === 'CEO'} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`Tender${manager ? ' · Manager' : ''}`} />
+          <TenderSidebarNav isCeo={user.roleName === 'CEO'} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -41,6 +43,6 @@ export default async function TenderLayout({ children }: { children: React.React
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

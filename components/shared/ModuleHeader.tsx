@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ChevronDown, LogOut, FileText } from 'lucide-react'
 import { ReportProblemButton } from '@/components/shared/ReportProblemButton'
 import { NotificationBell } from '@/components/shared/NotificationBell'
+import { SidebarDrawerToggle } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Top bar for a department module: who is signed in, a greeting, the Report button
@@ -90,14 +91,19 @@ export function ModuleHeader({
   const initials = initialsOf(fullName)
 
   return (
-    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b border-border-subtle bg-surface-card px-6 py-4">
-      <div className="min-w-0">
-        <h2 className="truncate text-lg font-semibold tracking-tight text-brand-slate">
-          <span ref={greetingRef}>Welcome back</span>, {firstNameOf(fullName)}
-        </h2>
-        <p className="mt-0.5 truncate text-xs text-text-muted">
-          {subtitle ?? [departmentName, roleName].filter(Boolean).join(' · ')}
-        </p>
+    <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b border-border-subtle bg-surface-card px-4 py-4 sm:px-6">
+      <div className="flex min-w-0 items-center gap-2">
+        {/* Off-canvas navigation trigger on phones; inert where the module
+            has no sidebar to open (/me). */}
+        <SidebarDrawerToggle />
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-semibold tracking-tight text-brand-slate sm:text-lg">
+            <span ref={greetingRef}>Welcome back</span>, {firstNameOf(fullName)}
+          </h2>
+          <p className="mt-0.5 truncate text-xs text-text-muted">
+            {subtitle ?? [departmentName, roleName].filter(Boolean).join(' · ')}
+          </p>
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">

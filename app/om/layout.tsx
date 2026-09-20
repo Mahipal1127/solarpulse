@@ -3,7 +3,7 @@ import { OM_DEPARTMENT_SLUG, isOMLead } from '@/lib/services/operations'
 import { OMSidebarNav } from '@/components/om/OMSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Operations & Maintenance module shell.
@@ -23,13 +23,15 @@ export default async function OMLayout({ children }: { children: React.ReactNode
   const readOnly = isReadOnlyFor(user, OM_DEPARTMENT_SLUG)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`O&M${isOMLead(user) ? ' · Lead' : ''}`} />
-        <OMSidebarNav isCeo={user.roleName === 'CEO'} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`O&M${isOMLead(user) ? ' · Lead' : ''}`} />
+          <OMSidebarNav isCeo={user.roleName === 'CEO'} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -52,6 +54,6 @@ export default async function OMLayout({ children }: { children: React.ReactNode
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

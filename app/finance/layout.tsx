@@ -7,7 +7,7 @@ import {
 import { FinanceSidebarNav } from '@/components/finance/FinanceSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Finance & Accounts module shell.
@@ -30,13 +30,15 @@ export default async function FinanceLayout({ children }: { children: React.Reac
   const lead = isFinanceLead(user)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`Finance${lead ? ' · Lead' : ''}`} />
-        <FinanceSidebarNav isCeo={user.roleName === 'CEO'} isLead={lead} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`Finance${lead ? ' · Lead' : ''}`} />
+          <FinanceSidebarNav isCeo={user.roleName === 'CEO'} isLead={lead} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -54,6 +56,6 @@ export default async function FinanceLayout({ children }: { children: React.Reac
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

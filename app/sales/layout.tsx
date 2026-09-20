@@ -3,7 +3,7 @@ import { SALES_DEPARTMENT_SLUG, isSalesManager } from '@/lib/services/sales'
 import { SalesSidebarNav } from '@/components/sales/SalesSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Sales module shell.
@@ -22,13 +22,15 @@ export default async function SalesLayout({ children }: { children: React.ReactN
   const readOnly = isReadOnlyFor(user, SALES_DEPARTMENT_SLUG)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`Sales${isSalesManager(user) ? ' · Manager' : ''}`} />
-        <SalesSidebarNav isCeo={user.roleName === 'CEO'} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`Sales${isSalesManager(user) ? ' · Manager' : ''}`} />
+          <SalesSidebarNav isCeo={user.roleName === 'CEO'} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -50,6 +52,6 @@ export default async function SalesLayout({ children }: { children: React.ReactN
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

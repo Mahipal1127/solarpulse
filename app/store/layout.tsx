@@ -3,7 +3,7 @@ import { STORE_DEPARTMENT_SLUG, isStoreLead } from '@/lib/store/constants'
 import { StoreSidebarNav } from '@/components/store/StoreSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Store module shell.
@@ -26,13 +26,15 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const readOnly = isReadOnlyFor(user, STORE_DEPARTMENT_SLUG)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`Store${isStoreLead(user) ? ' · Lead' : ''}`} />
-        <StoreSidebarNav isCeo={user.roleName === 'CEO'} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`Store${isStoreLead(user) ? ' · Lead' : ''}`} />
+          <StoreSidebarNav isCeo={user.roleName === 'CEO'} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -50,6 +52,6 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

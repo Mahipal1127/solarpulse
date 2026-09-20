@@ -6,7 +6,7 @@ import {
 import { TechnicalSidebarNav } from '@/components/technical/TechnicalSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Technical module shell.
@@ -52,13 +52,15 @@ export default async function TechnicalLayout({ children }: { children: React.Re
   const isVisitor = !isTechnical && user.roleName !== 'CEO'
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`Technical${lead && isTechnical ? ' · Lead' : ''}`} />
-        <TechnicalSidebarNav isCeo={user.roleName === 'CEO'} visitorOnly={isVisitor} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`Technical${lead && isTechnical ? ' · Lead' : ''}`} />
+          <TechnicalSidebarNav isCeo={user.roleName === 'CEO'} visitorOnly={isVisitor} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -93,6 +95,6 @@ export default async function TechnicalLayout({ children }: { children: React.Re
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

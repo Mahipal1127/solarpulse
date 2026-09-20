@@ -31,8 +31,8 @@ export default async function MeLayout({ children }: { children: React.ReactNode
         subtitle="My workspace"
       />
 
-      <div className="border-b border-border-subtle bg-surface-card px-6 py-2.5">
-        <nav className="flex flex-wrap gap-4 text-sm">
+      <div className="border-b border-border-subtle bg-surface-card px-4 py-2.5 sm:px-6">
+        <nav className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <Link href="/me/attendance" className="text-text-muted hover:text-brand-gold">
             Attendance
           </Link>

@@ -6,7 +6,7 @@ import {
 import { DistributionSidebarNav } from '@/components/distribution/DistributionSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * Distribution module shell.
@@ -47,15 +47,17 @@ export default async function DistributionLayout({ children }: { children: React
   const isApprover = !isDistribution && user.roleName !== 'CEO'
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand
-          subtitle={`Distribution${manager && isDistribution ? ' · Manager' : ''}`}
-        />
-        <DistributionSidebarNav isCeo={user.roleName === 'CEO'} approverOnly={isApprover} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand
+            subtitle={`Distribution${manager && isDistribution ? ' · Manager' : ''}`}
+          />
+          <DistributionSidebarNav isCeo={user.roleName === 'CEO'} approverOnly={isApprover} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -89,6 +91,6 @@ export default async function DistributionLayout({ children }: { children: React
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

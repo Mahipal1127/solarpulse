@@ -3,7 +3,7 @@ import { HR_DEPARTMENT_SLUG, isHrLead } from '@/lib/services/hr'
 import { HrSidebarNav } from '@/components/hr/HrSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * HR module shell.
@@ -28,13 +28,15 @@ export default async function HrLayout({ children }: { children: React.ReactNode
   const lead = isHrLead(user)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`HR${lead ? ' · Lead' : ''}`} />
-        <HrSidebarNav isCeo={user.roleName === 'CEO'} isLead={lead} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`HR${lead ? ' · Lead' : ''}`} />
+          <HrSidebarNav isCeo={user.roleName === 'CEO'} isLead={lead} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -52,6 +54,6 @@ export default async function HrLayout({ children }: { children: React.ReactNode
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }

@@ -3,7 +3,7 @@ import { DISCOM_DEPARTMENT_SLUG, isDiscomLead } from '@/lib/services/discom'
 import { DiscomSidebarNav } from '@/components/discom/DiscomSidebarNav'
 import { ModuleHeader } from '@/components/shared/ModuleHeader'
 import { SidebarBrand } from '@/components/shared/SidebarBrand'
-import { SIDEBAR_SHELL } from '@/components/shared/chrome'
+import { ResponsiveSidebar } from '@/components/shared/ResponsiveSidebar'
 
 /**
  * DISCOM module shell.
@@ -26,13 +26,15 @@ export default async function DiscomLayout({ children }: { children: React.React
   const readOnly = isReadOnlyFor(user, DISCOM_DEPARTMENT_SLUG)
 
   return (
-    <div className="flex h-full">
-      <aside className={SIDEBAR_SHELL}>
-        <SidebarBrand subtitle={`DISCOM${isDiscomLead(user) ? ' · Lead' : ''}`} />
-        <DiscomSidebarNav isCeo={user.roleName === 'CEO'} />
-      </aside>
-
-      <main className="flex flex-1 flex-col overflow-y-auto bg-surface-bg">
+    <ResponsiveSidebar
+      sidebar={
+        <>
+          <SidebarBrand subtitle={`DISCOM${isDiscomLead(user) ? ' · Lead' : ''}`} />
+          <DiscomSidebarNav isCeo={user.roleName === 'CEO'} />
+        </>
+      }
+    >
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-surface-bg">
         <ModuleHeader
           fullName={user.full_name}
           email={user.email}
@@ -52,6 +54,6 @@ export default async function DiscomLayout({ children }: { children: React.React
         )}
         {children}
       </main>
-    </div>
+    </ResponsiveSidebar>
   )
 }
