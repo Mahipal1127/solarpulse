@@ -64,6 +64,10 @@ const DEPARTMENT_HOME: Record<string, string> = {
   // reason. Slug is 'store', seeded in 0002. Lands on the dashboard (low-stock
   // alerts + the person's own movements/tasks), not the movement log.
   store: '/store/dashboard',
+  // Literal /rooftop/* path, not a (rooftop) route group — same collision
+  // reason. Slug is 'rooftop', seeded in 0026. Lands on the dashboard (live
+  // sites + the latest site updates), not the raw site list.
+  rooftop: '/rooftop/dashboard',
 }
 
 export function homeRouteFor(

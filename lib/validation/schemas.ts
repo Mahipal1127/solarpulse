@@ -2287,3 +2287,44 @@ export const companyDetailsSchema = z.object({
 })
 
 export type CompanyDetailsInput = z.infer<typeof companyDetailsSchema>
+
+// ---------------------------------------------------------------------------
+// Rooftop department (0026)
+// ---------------------------------------------------------------------------
+
+/** Status a member/lead may set through the ordinary update endpoint. */
+export const rooftopUpdatableStatus = z.enum(['active', 'on_hold', 'completed', 'cancelled'])
+
+export const createRooftopProjectSchema = z.object({
+  customer_id: z.string().uuid('Select a customer'),
+  site_address: z.string().trim().min(1, 'Enter the site address').max(500),
+  site_city: z.string().trim().max(120).optional().nullable(),
+  site_state: z.string().trim().max(120).optional().nullable(),
+  site_pincode: z.string().trim().max(12).optional().nullable(),
+  capacity_kw: nonNegativeAmount.optional().nullable(),
+  go_live_date: optionalDate,
+  notes: z.string().trim().max(5000).optional().nullable(),
+})
+
+export const updateRooftopProjectSchema = z
+  .object({
+    status: rooftopUpdatableStatus.optional(),
+    site_address: z.string().trim().min(1).max(500).optional(),
+    site_city: z.string().trim().max(120).nullable().optional(),
+    site_state: z.string().trim().max(120).nullable().optional(),
+    site_pincode: z.string().trim().max(12).nullable().optional(),
+    capacity_kw: nonNegativeAmount.nullable().optional(),
+    go_live_date: optionalDate,
+    notes: z.string().trim().max(5000).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' })
+
+export const createRooftopUpdateSchema = z.object({
+  kind: z.enum(['progress', 'issue', 'resolved', 'handover']).default('progress'),
+  note: z.string().trim().min(1, 'Describe what happened on site').max(2000),
+})
+
+export type CreateRooftopProjectInput = z.infer<typeof createRooftopProjectSchema>
+export type UpdateRooftopProjectInput = z.infer<typeof updateRooftopProjectSchema>
+export type CreateRooftopUpdateInput = z.infer<typeof createRooftopUpdateSchema>
+

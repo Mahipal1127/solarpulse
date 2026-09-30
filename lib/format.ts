@@ -24,6 +24,8 @@ import type {
   BackupResult,
   InstallationStatus,
   InspectionResult,
+  RooftopProjectStatus,
+  RooftopUpdateKind,
   ServiceTicketStatus,
   ServicePriority,
   AmcStatus,
@@ -1765,3 +1767,39 @@ export const FACILITY_STATUS_LABELS: Record<FacilityStatus, string> = {
   in_progress: 'In Progress',
   resolved: 'Resolved',
 }
+
+// ---------------------------------------------------------------------------
+// Rooftop module
+// ---------------------------------------------------------------------------
+
+export const ROOFTOP_STATUS_STYLES: Record<RooftopProjectStatus, string> = {
+  active: 'badge-info',
+  on_hold: 'badge-warning',
+  completed: 'badge-success',
+  cancelled: 'badge-neutral',
+}
+
+export const ROOFTOP_STATUS_LABELS: Record<RooftopProjectStatus, string> = {
+  active: 'Live',
+  on_hold: 'On Hold',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+}
+
+/** Statuses where work is happening or pending at the site. */
+export const ROOFTOP_OPEN_STATUSES: RooftopProjectStatus[] = ['active', 'on_hold']
+
+export const ROOFTOP_UPDATE_KIND_STYLES: Record<RooftopUpdateKind, string> = {
+  progress: 'badge-info',
+  issue: 'badge-danger',
+  resolved: 'badge-success',
+  handover: 'badge-warning',
+}
+
+export const ROOFTOP_UPDATE_KIND_LABELS: Record<RooftopUpdateKind, string> = {
+  progress: 'Progress',
+  issue: 'Issue',
+  resolved: 'Resolved',
+  handover: 'Handover',
+}
+

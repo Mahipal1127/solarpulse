@@ -1628,3 +1628,50 @@ export interface EmployeeReport {
   created_at: string
   updated_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Rooftop department (migration 0026)
+// ---------------------------------------------------------------------------
+
+export type RooftopProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled'
+
+export type RooftopUpdateKind = 'progress' | 'issue' | 'resolved' | 'handover'
+
+export interface RooftopProject {
+  id: string
+  organization_id: string
+  customer_id: string
+  site_address: string
+  site_city: string | null
+  site_state: string | null
+  site_pincode: string | null
+  capacity_kw: number | string | null
+  status: RooftopProjectStatus
+  go_live_date: string | null
+  notes: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  /** Embedded by the service/dashboard selects for display. */
+  customer?: RooftopProjectCustomer | null
+}
+
+export interface RooftopProjectCustomer {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  address: string | null
+}
+
+export interface RooftopSiteUpdate {
+  id: string
+  project_id: string
+  updated_by: string
+  kind: RooftopUpdateKind
+  note: string
+  created_at: string
+  /** Embedded by the service selects for display. */
+  author?: { full_name: string } | null
+}
+
