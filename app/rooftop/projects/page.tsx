@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { Card, StatCard, Badge, EmptyState } from '@/components/ui/primitives'
 import { pillClass } from '@/components/shared/chrome'
-import { getRooftopSummary } from '@/lib/rooftop/dashboard'
+import { getRooftopCounts, listRooftopProjects } from '@/lib/rooftop/dashboard'
 import { ROOFTOP_DEPARTMENT_SLUG } from '@/lib/services/rooftop'
 import {
   formatDate,
@@ -43,9 +43,13 @@ export default async function RooftopProjectsPage(
     | RooftopProjectStatus
     | 'all'
 
-  const summary = await getRooftopSummary(user.organization_id)
-  const projects =
-    filter === 'all' ? summary.all : summary.all.filter((p) => p.status === filter)
+  // Two reads, not one: the tiles come from head-counts that transfer no rows,
+  // and the list is narrowed by a WHERE clause — so choosing "Completed" filters
+  // the query rather than a capped page of results that could silently lie.
+  const [counts, projects] = await Promise.all([
+    getRooftopCounts(user.organization_id),
+    listRooftopProjects(user.organization_id, filter === 'all' ? undefined : filter),
+  ])
 
   return (
     <div className="space-y-6 p-6">
@@ -53,11 +57,11 @@ export default async function RooftopProjectsPage(
         <div>
           <h1 className="text-2xl font-semibold text-brand-slate">Sites</h1>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-text-muted">
-            <span>{summary.all.length} total</span>
+            <span>{counts.total} total</span>
             <span>·</span>
-            <span>{summary.active} live</span>
+            <span>{counts.active} live</span>
             <span>·</span>
-            <span>{summary.completed} done</span>
+            <span>{counts.completed} done</span>
           </div>
         </div>
         {!readOnly && (
@@ -71,21 +75,21 @@ export default async function RooftopProjectsPage(
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Live" value={summary.active} hint="Work happening now" />
+        <StatCard label="Live" value={counts.active} hint="Work happening now" />
         <StatCard
           label="On Hold"
-          value={summary.onHold}
-          tone={summary.onHold > 0 ? 'warning' : 'default'}
+          value={counts.onHold}
+          tone={counts.onHold > 0 ? 'warning' : 'default'}
         />
         <StatCard
           label="Completed"
-          value={summary.completed}
-          tone={summary.completed > 0 ? 'success' : 'default'}
+          value={counts.completed}
+          tone={counts.completed > 0 ? 'success' : 'default'}
         />
         <StatCard
           label="Cancelled"
-          value={summary.cancelled}
-          tone={summary.cancelled > 0 ? 'warning' : 'default'}
+          value={counts.cancelled}
+          tone={counts.cancelled > 0 ? 'warning' : 'default'}
         />
       </div>
 

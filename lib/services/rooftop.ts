@@ -97,16 +97,24 @@ export async function getRooftopProject(
 ): Promise<{ project: RooftopProject; updates: RooftopSiteUpdate[] }> {
   const supabase = await createSupabaseServerClient()
 
-  const project = await loadVisibleProject(supabase, projectId)
+  // Both reads are keyed on ids the caller already has, so they run together
+  // rather than in series — one round trip instead of two on the module's most
+  // opened page. A missing project throws from loadVisibleProject; the update
+  // read that ran alongside it simply returns nothing.
+  const [project, updateResult] = await Promise.all([
+    loadVisibleProject(supabase, projectId),
+    supabase
+      .from('rooftop_site_updates')
+      .select('*, author:users!rooftop_site_updates_updated_by_fkey(full_name)')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ])
 
-  const { data: updates } = await supabase
-    .from('rooftop_site_updates')
-    .select('*, author:users!rooftop_site_updates_updated_by_fkey(full_name)')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: false })
-    .limit(200)
-
-  return { project, updates: (updates ?? []) as unknown as RooftopSiteUpdate[] }
+  return {
+    project,
+    updates: (updateResult.data ?? []) as unknown as RooftopSiteUpdate[],
+  }
 }
 
 // ---------------------------------------------------------------------------

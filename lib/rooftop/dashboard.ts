@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { RooftopProject, RooftopSiteUpdate } from '@/lib/types'
+import type { RooftopProject, RooftopProjectStatus, RooftopSiteUpdate } from '@/lib/types'
 
 /**
  * Read shapes for the Rooftop module's dashboard and list pages. Every query
@@ -48,6 +48,92 @@ export async function getRooftopSummary(organizationId: string): Promise<Rooftop
       .filter((p) => p.status !== 'cancelled')
       .reduce((sum, p) => sum + Number(p.capacity_kw ?? 0), 0),
   }
+}
+
+export interface RooftopCounts {
+  total: number
+  active: number
+  onHold: number
+  completed: number
+  cancelled: number
+  /** Sum of capacity_kw across every non-cancelled site, in kW. */
+  totalCapacityKw: number
+}
+
+/**
+ * The monitoring board's tiles, without transferring the rows behind them.
+ *
+ * Counts run with `head: true`, so Postgres counts and returns no rows at all —
+ * four index-only counts rather than pulling every project (with its customer
+ * join) just to call `.length`. This is what makes the board's numbers correct
+ * rather than capped: `.reduce` over a 1000-row page would misreport an org with
+ * more sites than that.
+ *
+ * The capacity sum has no aggregate available through PostgREST, so it reads
+ * only the capacity_kw column — no customer join — and adds up in JS, the same
+ * shape every other module's summary uses.
+ */
+export async function getRooftopCounts(organizationId: string): Promise<RooftopCounts> {
+  const supabase = await createSupabaseServerClient()
+
+  const countFor = (status?: RooftopProjectStatus) => {
+    const query = supabase
+      .from('rooftop_projects')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', organizationId)
+    return status ? query.eq('status', status) : query
+  }
+
+  const [total, active, onHold, completed, cancelled, capacity] = await Promise.all([
+    countFor(),
+    countFor('active'),
+    countFor('on_hold'),
+    countFor('completed'),
+    countFor('cancelled'),
+    supabase
+      .from('rooftop_projects')
+      .select('capacity_kw')
+      .eq('organization_id', organizationId)
+      .neq('status', 'cancelled')
+      .limit(1000),
+  ])
+
+  const capacityRows = (capacity.data ?? []) as { capacity_kw: number | string | null }[]
+
+  return {
+    total: total.count ?? 0,
+    active: active.count ?? 0,
+    onHold: onHold.count ?? 0,
+    completed: completed.count ?? 0,
+    cancelled: cancelled.count ?? 0,
+    totalCapacityKw: capacityRows.reduce((sum, row) => sum + Number(row.capacity_kw ?? 0), 0),
+  }
+}
+
+/**
+ * The monitoring board's site list, optionally narrowed to one status.
+ *
+ * The status filter is a WHERE clause, not a JS `.filter()`. It used to narrow a
+ * capped page in memory: past the cap, "Completed" would show a subset of the
+ * completed sites while its own count kept counting the same truncated set —
+ * wrong twice, and silently.
+ */
+export async function listRooftopProjects(
+  organizationId: string,
+  status?: RooftopProjectStatus
+): Promise<RooftopProjectWithContext[]> {
+  const supabase = await createSupabaseServerClient()
+
+  const query = supabase
+    .from('rooftop_projects')
+    .select('*, customer:customers(id, name, phone, email, address)')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: false })
+    .limit(1000)
+
+  const { data } = status ? await query.eq('status', status) : await query
+
+  return (data ?? []) as unknown as RooftopProjectWithContext[]
 }
 
 export interface RooftopRecentUpdate extends RooftopSiteUpdate {

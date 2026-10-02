@@ -236,6 +236,58 @@ export const closeDealSchema = z.object({
   address: z.string().trim().max(1000).optional().nullable(),
 })
 
+/**
+ * A customer created DIRECTLY, with no won lead behind it — a walk-in, a
+ * service-only client, or a site that reached another department first.
+ *
+ * Every other customer in this system is born inside close_deal() (0005) as a
+ * side effect of winning a lead. The customers table documents a direct-entry
+ * allowance (its lead_id is nullable) that nothing in the app exercised until
+ * now, which is what this schema opens up, guarded like every other Sales write.
+ *
+ * lead_id is deliberately absent: a customer the caller can attribute to a lead
+ * belongs on that lead's close, not here — which is exactly what close_deal()
+ * writes.
+ */
+export const createCustomerSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(200),
+  phone: optionalPhone,
+  email: optionalEmail,
+  // Same bound closeDealSchema puts on the address it captures.
+  address: z.string().trim().max(1000).optional().nullable(),
+  // Manager/CEO only. An executive's customer is forced to themselves in the
+  // service layer, so this field being absent is the normal case for them.
+  assigned_to: z.string().uuid().optional().nullable(),
+})
+
+export type CreateCustomerInput = z.infer<typeof createCustomerSchema>
+
+/**
+ * Editing a customer's contact details.
+ *
+ * lead_id is absent on purpose, here as in createCustomerSchema: a direct
+ * customer cannot later be re-attributed to a lead, because the customer a
+ * won lead produces is written by close_deal() together with its closure row.
+ * Letting a PATCH invent that link would manufacture a customer with a lead and
+ * no closure — the exact partial state the atomic close exists to prevent.
+ * Every field is optional (PATCH semantics); an empty body is rejected.
+ */
+export const updateCustomerSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Name must be at least 2 characters').max(200).optional(),
+    phone: optionalPhone,
+    email: optionalEmail,
+    address: z.string().trim().max(1000).nullable().optional(),
+    // Manager/CEO only in practice (assertCanAssignTo), and the target must be
+    // an active Sales member, as in createCustomer.
+    assigned_to: z.string().uuid().nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' })
+
+export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>
+
+
+
 export const createSalesTargetSchema = z
   .object({
     user_id: z.string().uuid('Select an employee'),

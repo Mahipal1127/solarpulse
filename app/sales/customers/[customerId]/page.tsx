@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireDepartment } from '@/lib/auth/guards'
+import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Card, CardHeader, Badge, EmptyState } from '@/components/ui/primitives'
 import { SALES_DEPARTMENT_SLUG } from '@/lib/services/sales'
@@ -27,7 +27,8 @@ type ClosureRow = DealClosure & { closer: { full_name: string } | null }
 export default async function CustomerDetailPage(
   props: PageProps<'/sales/customers/[customerId]'>
 ) {
-  await requireDepartment(SALES_DEPARTMENT_SLUG)
+  const user = await requireDepartment(SALES_DEPARTMENT_SLUG)
+  const readOnly = isReadOnlyFor(user, SALES_DEPARTMENT_SLUG)
   const { customerId } = await props.params
 
   const supabase = await createSupabaseServerClient()
@@ -83,14 +84,25 @@ export default async function CustomerDetailPage(
             </p>
           </div>
 
-          {customer.lead && (
-            <Link
-              href={`/sales/leads/${customer.lead.id}`}
-              className="shrink-0 rounded-lg border border-border-subtle bg-white px-4 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-bg"
-            >
-              View originating lead →
-            </Link>
-          )}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {customer.lead && (
+              <Link
+                href={`/sales/leads/${customer.lead.id}`}
+                className="rounded-lg border border-border-subtle bg-white px-4 py-2.5 text-sm font-medium text-text-muted transition-colors hover:bg-surface-bg"
+              >
+                View originating lead →
+              </Link>
+            )}
+
+            {!readOnly && (
+              <Link
+                href={`/sales/customers/${customer.id}/edit`}
+                className="rounded-lg bg-brand-gold px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-orange"
+              >
+                Edit customer
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 

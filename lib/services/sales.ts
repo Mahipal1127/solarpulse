@@ -16,6 +16,8 @@ import type {
   CreateProposalInput,
   UpdateProposalInput,
   CloseDealInput,
+  CreateCustomerInput,
+  UpdateCustomerInput,
   CreateSalesTargetInput,
 } from '@/lib/validation/schemas'
 import type {
@@ -25,6 +27,7 @@ import type {
   SiteVisitRequest,
   Quotation,
   Proposal,
+  Customer,
   SalesTarget,
 } from '@/lib/types'
 
@@ -733,6 +736,148 @@ export async function closeDeal(
   })
 
   return { closureId: data as string }
+}
+
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a customer directly, with no won lead behind it.
+ *
+ * Every other customer row in this system is born inside close_deal() (0005),
+ * as a side effect of winning a lead. The customers table allows direct entry —
+ * its lead_id is nullable, and its own comment says so — but until now nothing
+ * in the app exercised that allowance, so a walk-in, a service-only client or a
+ * site that reached O&M/Rooftop first could only be added by hand in the
+ * database. This is that path, guarded the way every other Sales write is.
+ *
+ * An executive's row is forced to themselves, and that is load-bearing rather
+ * than cosmetic: sales_exec_own_customers is a FOR ALL policy with no
+ * with-check clause, so Postgres uses its USING expression as the insert check
+ * and requires assigned_to = auth.uid() on every row they write. Assigning to a
+ * colleague is a manager action (assertCanAssignTo) and the target must be an
+ * active member of Sales (assertSalesEmployee).
+ */
+export async function createCustomer(
+  user: SessionUser,
+  input: CreateCustomerInput
+): Promise<Customer> {
+  assertCanWrite(user)
+  assertCanAssignTo(user, input.assigned_to)
+
+  const supabase = await createSupabaseServerClient()
+
+  const assignedTo = input.assigned_to ?? user.id
+  if (assignedTo !== user.id) await assertSalesEmployee(supabase, user, assignedTo)
+
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({
+      organization_id: user.organization_id,
+      // Direct entry means exactly this: no lead behind the customer.
+      lead_id: null,
+      name: input.name,
+      phone: input.phone ?? null,
+      // optionalEmail admits ''; normalised to null here, the convention the HR
+      // company-details service uses for the same union type.
+      email: input.email || null,
+      address: input.address ?? null,
+      assigned_to: assignedTo,
+    })
+    .select(
+      'id, organization_id, lead_id, name, phone, email, address, assigned_to, created_at, updated_at'
+    )
+    .single()
+
+  if (error) throw new ServiceError('Could not create the customer', 400)
+
+  const customer = data as Customer
+
+  await logAction({
+    organizationId: user.organization_id,
+    userId: user.id,
+    action: 'customer.created',
+    entityType: 'customer',
+    entityId: customer.id,
+    // 'direct' versus the close_deal path — the one distinction a report on
+    // customers actually needs.
+    metadata: { source: 'direct', lead_id: null },
+  })
+
+  return customer
+}
+
+/**
+ * Edits a customer's contact details.
+ *
+ * Without this, a customer was immutable once written: a typo'd phone number
+ * could only be corrected in the SQL editor, and a directly-entered customer —
+ * which has no lead to go and edit instead — had no correction path at all.
+ *
+ * lead_id is not settable, matching the schema: the link between a customer and
+ * a lead is close_deal()'s to make, together with the closure row.
+ *
+ * The ownership rules mirror createCustomer. assertCanAssignTo keeps executives
+ * from handing a customer to a colleague, and assertSalesEmployee proves the
+ * target is an active member of Sales. Note that an executive's own rows are
+ * the only ones RLS returns to them, so a customer they cannot see is a 404
+ * here rather than a row that fails to update.
+ */
+export async function updateCustomer(
+  user: SessionUser,
+  customerId: string,
+  input: UpdateCustomerInput
+): Promise<Customer> {
+  assertCanWrite(user)
+  assertCanAssignTo(user, input.assigned_to)
+
+  const supabase = await createSupabaseServerClient()
+
+  // RLS decides visibility; a colleague's customer is simply not returned.
+  const { data: existing } = await supabase
+    .from('customers')
+    .select('id, assigned_to')
+    .eq('id', customerId)
+    .maybeSingle()
+  if (!existing) throw new ServiceError('Customer not found', 404)
+
+  // Reassignment alone needs the new owner to be a Sales member — no point
+  // checking when the value is unchanged.
+  if (input.assigned_to && input.assigned_to !== existing.assigned_to) {
+    await assertSalesEmployee(supabase, user, input.assigned_to)
+  }
+
+  const { data, error } = await supabase
+    .from('customers')
+    .update({
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      // '' from an optional text field means "clear it", not "store empty".
+      ...(input.phone !== undefined ? { phone: input.phone || null } : {}),
+      ...(input.email !== undefined ? { email: input.email || null } : {}),
+      ...(input.address !== undefined ? { address: input.address || null } : {}),
+      ...(input.assigned_to !== undefined ? { assigned_to: input.assigned_to ?? null } : {}),
+    })
+    .eq('id', customerId)
+    .select(
+      'id, organization_id, lead_id, name, phone, email, address, assigned_to, created_at, updated_at'
+    )
+    .single()
+
+  if (error) throw new ServiceError('Could not update the customer', 400)
+
+  const customer = data as Customer
+
+  await logAction({
+    organizationId: user.organization_id,
+    userId: user.id,
+    action: 'customer.updated',
+    entityType: 'customer',
+    entityId: customerId,
+    metadata: { fields: Object.keys(input) },
+  })
+
+  return customer
 }
 
 // ---------------------------------------------------------------------------

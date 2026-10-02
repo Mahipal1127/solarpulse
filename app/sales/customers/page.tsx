@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireDepartment, isReadOnlyFor } from '@/lib/auth/guards'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Card, StatCard } from '@/components/ui/primitives'
@@ -41,14 +42,24 @@ export default async function CustomersPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-brand-slate">
-          {seesTeam ? 'Customers' : 'My Customers'}
-        </h1>
-        <p className="mt-1 text-sm text-text-muted">
-          Created automatically when a deal closes. Invoicing and payment tracking belong to
-          Finance, not here.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-brand-slate">
+            {seesTeam ? 'Customers' : 'My Customers'}
+          </h1>
+          <p className="mt-1 text-sm text-text-muted">
+            Created when a deal closes, or added directly. Invoicing and payment tracking belong
+            to Finance, not here.
+          </p>
+        </div>
+        {!readOnly && (
+          <Link
+            href="/sales/customers/new"
+            className="rounded-lg bg-brand-gold px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-orange"
+          >
+            + Add customer
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -73,8 +84,8 @@ export default async function CustomersPage() {
           emptyTitle="No customers yet"
           emptyDescription={
             readOnly
-              ? 'The Sales department has not closed a deal yet.'
-              : 'Closing a deal on a lead creates the customer record here automatically.'
+              ? 'The Sales department has no customers yet.'
+              : 'Close a deal on a lead, or add a customer directly.'
           }
         />
       </Card>
